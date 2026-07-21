@@ -27,7 +27,7 @@ Siempre `docker compose down` antes de rebuildear — un contenedor viejo corrie
 
 ## Despliegue (Railway)
 
-- **URL**: https://app-savings-tracker.up.railway.app
+- **URL**: https://app-savings-tracker-production.up.railway.app
 - **Proyecto/servicio Railway**: `app-savings-tracker` (mismo nombre que el repo).
 - **Deploy automático**: cada push a `main` en GitHub dispara build + deploy (builder: Dockerfile, no Railpack).
 - **Persistencia**: volumen de 5GB montado en `/app/data` — datos de producción viven ahí, no en el `data/` local.
