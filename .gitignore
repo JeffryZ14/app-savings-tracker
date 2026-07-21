@@ -1,0 +1,33 @@
+# Dependency directories
+node_modules/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+
+# Build outputs
+.out/
+build/
+dist/
+
+# Next.js
+.next/
+.cache/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Datos locales (JSON store)
+/data/
+dev.db
