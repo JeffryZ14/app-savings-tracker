@@ -47,6 +47,16 @@ Always `docker compose down` before rebuilding — an old container left running
 - `docker-compose.yml` mounts `./data:/app/data` — on Railway this should be the persistent volume's mount path. Without a real persistent volume, all goals/movements are lost on redeploy.
 - No native/compiled dependencies anymore (better-sqlite3 and Prisma were removed) — the Dockerfile doesn't need build toolchains, keep it that way.
 
+### Deployed on Railway
+
+- **Live URL**: <https://app-savings-tracker.up.railway.app> (renamed from the auto-generated `ahorros-production-f583.up.railway.app` to match the project/service name).
+- **Project + service**: both named `app-savings-tracker` on Railway, matching the GitHub repo name (`JeffryZ14/app-savings-tracker`) — see `naming/deployments.md` in the `second-brain` repo for why this must match (it didn't at first; had to rename after the fact via GraphQL, since Railway CLI doesn't expose project/service rename).
+- **Deploy trigger**: GitHub-connected, branch `main` — every push to `main` auto-builds and redeploys. Builder is `DOCKERFILE` (auto-detected from the repo's `Dockerfile`, not Railpack).
+- **Persistent volume**: 5GB, mounted at `/app/data`, matches `DATA_DIR` default. This is the real, persistent `data/db.json` in production — separate from whatever's in your local `data/` folder.
+- **Sleep enabled** (`deploy.sleepApplication: true`, Railway's "serverless" mode): the single instance sleeps after 10 min with no traffic, wakes on next request. Safe here specifically because `numReplicas` is 1 and stays 1 — the in-process write queue in `store.ts` only works single-instance; do not raise replicas without rethinking that.
+- **Known CLI bug**: `railway volume add` panics (Rust `unwrap()` on `None`) on both CLI v5.20 and v5.27 as of this writing. Workaround: create the volume via the GraphQL API directly (`volumeCreate` mutation) using the token from `~/.railway/config.json` (`user.token` or `user.accessToken`), not the CLI.
+- Repo is currently **public** on GitHub — no secrets in the repo (`data/` is gitignored), but flag it if that should change.
+
 ## UI conventions
 
 - Vintage "savings passbook" visual theme — all styling is a single scoped `<style>` block inside `page.tsx` (`.sd-*` class prefix) plus a bit of Tailwind in `globals.css`/`layout.tsx`. Not a component library; don't introduce one without discussing.
