@@ -57,9 +57,15 @@ interface MonthRow {
   year: number; month: number; total: number;
 }
 
-function MonthlyTooltip({ active, payload, monthlyRate }: any) {
+interface MonthlyTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: MonthRow & { label: string } }>;
+  monthlyRate: number;
+}
+
+function MonthlyTooltip({ active, payload, monthlyRate }: MonthlyTooltipProps) {
   if (!active || !payload || !payload.length) return null;
-  const row = payload[0].payload as MonthRow & { label: string };
+  const row = payload[0].payload;
   const met = row.total >= monthlyRate;
   return (
     <div
