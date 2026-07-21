@@ -7,7 +7,10 @@ updates:
       day: "monday"
       time: "04:00"
       timezone: "America/Lima"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      all-npm:
+        patterns: [ "*" ]
     labels:
       - "dependencies"
     commit-message:
@@ -21,6 +24,9 @@ updates:
       day: "monday"
       time: "04:00"
       timezone: "America/Lima"
+    groups:
+      all-actions:
+        patterns: [ "*" ]
     labels:
       - "dependencies"
       - "ci"
