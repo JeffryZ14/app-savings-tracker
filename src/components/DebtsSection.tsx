@@ -119,84 +119,104 @@ export default function DebtsSection(props: DebtsSectionProps) {
   return (
     <section className="dbt-root">
       <style>{`
-        .dbt-root { margin-top: clamp(30px, 6vw, 44px); }
+        .dbt-root { margin-top: clamp(var(--sp-6), 6vw, var(--sp-7)); }
         .dbt-head {
-          display: flex; align-items: center; justify-content: space-between; gap: 12px;
-          padding: 14px 16px; background: var(--surface-2); border: 1px solid var(--border);
-          border-radius: var(--radius); cursor: pointer;
+          display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4);
+          padding: var(--sp-4) var(--sp-4); background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--r-md); box-shadow: var(--e-1); cursor: pointer;
+          transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
         }
-        .dbt-head:hover { border-color: var(--muted); }
-        .dbt-head-left { display: flex; align-items: center; gap: 11px; min-width: 0; }
+        .dbt-head:hover { border-color: var(--brand); box-shadow: var(--e-2); }
+        .dbt-head:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+        .dbt-head-left { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
         .dbt-head-icon {
-          width: 36px; height: 36px; border-radius: 10px; background: var(--brand-soft);
+          width: 40px; height: 40px; border-radius: var(--r-sm); background: var(--brand-soft);
           color: var(--brand); display: grid; place-items: center; flex-shrink: 0;
         }
         .dbt-head-title { font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
-        .dbt-head-sub { font-family: var(--font-mono); font-size: 12px; color: var(--muted); margin-top: 1px; }
-        .dbt-head-sub b { color: var(--text); font-weight: 600; }
+        .dbt-head-sub { font-family: var(--font-ui); font-size: 12px; color: var(--muted); margin-top: 2px; }
+        .dbt-head-right { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; }
+        .dbt-total { text-align: right; }
+        .dbt-total-label {
+          font-family: var(--font-ui); font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+          letter-spacing: 0.06em; color: var(--muted);
+        }
+        .dbt-total-amount {
+          font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+          font-size: 19px; font-weight: 600; color: var(--positive); letter-spacing: -0.01em; margin-top: 1px;
+        }
+        .dbt-total-amount.zero { color: var(--muted); }
         .dbt-chev { color: var(--muted); display: flex; flex-shrink: 0; }
 
-        .dbt-body { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+        .dbt-body { margin-top: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
         .dbt-item {
           background: var(--surface); border: 1px solid var(--border);
-          border-radius: var(--radius-sm); padding: 14px 16px;
+          border-radius: var(--r-md); box-shadow: var(--e-1); padding: var(--sp-4);
         }
         .dbt-item.settled { opacity: 0.72; }
-        .dbt-item-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-        .dbt-person { font-weight: 600; font-size: 14.5px; }
-        .dbt-concept { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+        .dbt-item-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+        .dbt-person { font-family: var(--font-ui); font-weight: 600; font-size: 14.5px; }
+        .dbt-concept { font-family: var(--font-ui); font-size: 12.5px; color: var(--muted); margin-top: 2px; }
         .dbt-amounts { text-align: right; flex-shrink: 0; }
         .dbt-out {
           font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-          font-size: 16px; font-weight: 600; color: var(--negative);
+          font-size: 16px; font-weight: 600; color: var(--positive);
         }
         .dbt-item.settled .dbt-out { color: var(--brand); }
-        .dbt-of { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+        .dbt-of { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
         .dbt-settled-chip {
-          display: inline-flex; align-items: center; gap: 4px;
+          display: inline-flex; align-items: center; gap: var(--sp-1);
           font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
           text-transform: uppercase; letter-spacing: 0.05em; color: var(--brand);
-          background: var(--brand-soft); padding: 3px 8px; border-radius: 999px;
+          background: var(--brand-soft); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-pill);
         }
         .dbt-track {
-          height: 6px; border-radius: 999px; background: var(--surface-2);
-          border: 1px solid var(--border); overflow: hidden; margin-top: 11px;
+          height: 6px; border-radius: var(--r-pill); background: var(--surface-2);
+          border: 1px solid var(--border); overflow: hidden; margin-top: var(--sp-3);
         }
-        .dbt-fill { height: 100%; border-radius: 999px; background: var(--brand); }
-        .dbt-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+        .dbt-fill { height: 100%; border-radius: var(--r-pill); background: var(--brand); transition: width var(--dur-base) var(--ease); }
+        .dbt-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-3); }
         .dbt-btn {
           font-family: var(--font-ui); font-size: 12px; background: var(--surface);
-          border: 1px solid var(--border); color: var(--text); border-radius: 9px;
-          padding: 7px 11px; min-height: 34px; cursor: pointer;
-          display: inline-flex; align-items: center; gap: 5px;
+          border: 1px solid var(--border); color: var(--text); border-radius: var(--r-sm);
+          padding: var(--sp-2) var(--sp-3); min-height: 34px; cursor: pointer;
+          display: inline-flex; align-items: center; gap: var(--sp-1);
+          transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
         }
-        .dbt-btn:hover { background: var(--surface-2); }
+        .dbt-btn:hover { background: var(--surface-2); border-color: var(--brand); }
+        .dbt-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
         .dbt-btn.danger { color: var(--negative); }
-        .dbt-btn.danger:hover { background: var(--negative-soft); }
+        .dbt-btn.danger:hover { background: var(--negative-soft); border-color: var(--negative); }
         .dbt-btn.primary { background: var(--brand); color: #fff; border-color: transparent; }
-        .dbt-btn.primary:hover { background: var(--brand-strong); }
+        .dbt-btn.primary:hover { background: var(--brand-strong); border-color: transparent; }
 
-        .dbt-pay-form, .dbt-new-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-        .dbt-pay-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+        .dbt-pay-form, .dbt-new-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+        .dbt-pay-form { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
         .dbt-new {
-          background: var(--surface); border: 1px dashed var(--border);
-          border-radius: var(--radius-sm); padding: 14px 16px;
+          background: var(--surface-2); border: 1px dashed var(--border);
+          border-radius: var(--r-md); padding: var(--sp-4);
         }
         .dbt-input {
-          font-family: var(--font-ui); font-size: 13.5px; padding: 9px 10px; min-height: 38px;
-          border: 1px solid var(--border); border-radius: 9px;
-          background: var(--surface-2); color: var(--text);
+          font-family: var(--font-ui); font-size: 13.5px; padding: var(--sp-2) var(--sp-3); min-height: 38px;
+          border: 1px solid var(--border); border-radius: var(--r-sm);
+          background: var(--surface); color: var(--text);
+          transition: border-color var(--dur-fast) var(--ease);
         }
-        .dbt-input.num { font-family: var(--font-mono); width: 130px; }
+        .dbt-input:focus-visible { outline: none; border-color: var(--brand); }
+        .dbt-input.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; width: 130px; }
         .dbt-input.grow { flex: 1; min-width: 140px; }
-        .dbt-payments { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+        .dbt-payments { margin-top: var(--sp-3); border-top: 1px solid var(--border); padding-top: var(--sp-2); }
         .dbt-pay-row {
-          display: flex; align-items: center; justify-content: space-between; gap: 8px;
-          font-family: var(--font-mono); font-size: 12px; color: var(--muted); padding: 4px 0;
+          display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+          font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); padding: var(--sp-1) 0;
         }
-        .dbt-pay-del { background: none; border: none; color: var(--muted); cursor: pointer; padding: 3px; border-radius: 6px; display: inline-flex; }
+        .dbt-pay-del { background: none; border: none; color: var(--muted); cursor: pointer; padding: 3px; border-radius: var(--r-sm); display: inline-flex; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
         .dbt-pay-del:hover { color: var(--negative); background: var(--negative-soft); }
-        .dbt-empty { font-size: 13px; color: var(--muted); padding: 6px 2px; }
+        .dbt-empty { font-family: var(--font-ui); font-size: 13px; color: var(--muted); padding: var(--sp-2); }
+
+        @media (prefers-reduced-motion: reduce) {
+          .dbt-head, .dbt-fill, .dbt-btn, .dbt-input, .dbt-pay-del { transition: none; }
+        }
       `}</style>
 
       <div
@@ -212,12 +232,21 @@ export default function DebtsSection(props: DebtsSectionProps) {
           <div>
             <div className="dbt-head-title">Deudas por cobrar</div>
             <div className="dbt-head-sub">
-              {totalReceivable > 0 ? <>Te deben <b>{formatSoles(totalReceivable)}</b></> : "Nadie te debe por ahora"}
-              {debts.length > 0 && ` · ${debts.length} ${debts.length === 1 ? "registro" : "registros"}`}
+              {debts.length > 0
+                ? `${debts.length} ${debts.length === 1 ? "registro" : "registros"}`
+                : "Nadie te debe por ahora"}
             </div>
           </div>
         </div>
-        <span className="dbt-chev">{open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</span>
+        <div className="dbt-head-right">
+          <div className="dbt-total">
+            <div className="dbt-total-label">Por cobrar</div>
+            <div className={"dbt-total-amount" + (totalReceivable > 0 ? "" : " zero")}>
+              {formatSoles(totalReceivable)}
+            </div>
+          </div>
+          <span className="dbt-chev">{open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</span>
+        </div>
       </div>
 
       <AnimatePresence initial={false}>

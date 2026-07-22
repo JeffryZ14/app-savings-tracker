@@ -1,10 +1,11 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
-import { Plus, ChevronDown, ChevronUp, X, Check, ArrowDownCircle, ArrowUpCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { Plus, ChevronDown, ChevronUp, X, Check, ArrowDownCircle, ArrowUpCircle, AlertTriangle, CheckCircle2, Trash2, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { calculateProjection } from "@/lib/projection";
+import "./GoalCard.css";
 
 interface MovementData {
   id: string;
@@ -86,8 +87,15 @@ interface GoalCardProps {
   portfolioCompletionLabel: string | null;
 }
 
+// Progress-ring geometry (SVG is rotated -90deg so the arc starts at 12 o'clock)
+const RING_R = 52;
+const RING_C = 2 * Math.PI * RING_R;
+const MILESTONES = [25, 50, 75, 100];
+
 export default function GoalCard(props: GoalCardProps) {
   const { goal: g, idx } = props;
+  const prefersReduced = useReducedMotion();
+
   const pct = g.targetAmount > 0 ? Math.min(100, (g.currentAmount / g.targetAmount) * 100) : 0;
   const complete = g.targetAmount > 0 && g.currentAmount >= g.targetAmount;
   const remaining = g.targetAmount > 0 ? Math.max(0, g.targetAmount - g.currentAmount) : 0;
@@ -107,9 +115,12 @@ export default function GoalCard(props: GoalCardProps) {
 
   const allMovements = [...g.movements, ...props.movementHistory.items];
 
+  const ringOffset = RING_C * (1 - pct / 100);
+  const simOffset = simulatedPct !== null ? RING_C * (1 - simulatedPct / 100) : null;
+
   return (
     <motion.div
-      className="sd-card"
+      className={"sd-card" + (complete ? " gc-card-complete" : "")}
       layout
       initial={{ opacity: 0, y: 16, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -119,11 +130,24 @@ export default function GoalCard(props: GoalCardProps) {
       <AnimatePresence>
         {complete && (
           <motion.div
+            className="gc-celebrate"
+            aria-hidden="true"
+            initial={{ opacity: 0 }}
+            animate={prefersReduced ? { opacity: 1 } : { opacity: [0, 1, 0.75] }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: prefersReduced ? 0 : 1.1, ease: "easeOut" }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {complete && (
+          <motion.div
             className="sd-stamp"
             initial={{ opacity: 0, scale: 0.8, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8 }}
-            transition={{ type: "spring", stiffness: 320, damping: 20 }}
+            transition={prefersReduced ? { duration: 0 } : { type: "spring", stiffness: 320, damping: 20 }}
           >
             <span className="sd-badge-complete">
               <CheckCircle2 size={12} /> Completado
@@ -132,163 +156,222 @@ export default function GoalCard(props: GoalCardProps) {
         )}
       </AnimatePresence>
 
-      <div className="sd-card-head">
-        <h2 className="sd-card-name">
-          {g.icon} {g.title}
+      {/* ---- Compact header ------------------------------------------------ */}
+      <div className="gc-head">
+        <h2 className="gc-title">
+          <span className="gc-title-icon">{g.icon}</span>
+          <span>{g.title}</span>
         </h2>
+        <button
+          className="gc-delete"
+          onClick={() => props.onDeleteClick(g.id)}
+          aria-label={`Eliminar meta "${g.title}"`}
+        >
+          <Trash2 size={15} />
+        </button>
       </div>
 
-      <div className="sd-card-amounts">
-        {props.formatSoles(g.currentAmount)}
-        {g.targetAmount > 0 && (
-          <span className="sd-card-of">
-            {" "}de {props.formatSoles(g.targetAmount)}
-          </span>
-        )}
-        {g.targetAmount > 0 && !props.isEditingTarget && (
-          <button
-            className="sd-edit-btn"
-            onClick={() => props.onEditTargetClick(g.id, String(g.targetAmount))}
-            aria-label={`Editar meta de ${g.title}`}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+      {/* ---- Compact summary: ring + info --------------------------------- */}
+      <div className="gc-body">
+        {g.targetAmount > 0 ? (
+          <div className="gc-ring-wrap">
+            <svg className="gc-ring" viewBox="0 0 120 120" role="img" aria-label={`${pct.toFixed(0)}% completado`}>
+              <circle className="gc-ring-track" cx="60" cy="60" r={RING_R} />
+              {simOffset !== null && simulatedPct !== null && simulatedPct > pct && (
+                <motion.circle
+                  className="gc-ring-sim"
+                  cx="60" cy="60" r={RING_R}
+                  strokeDasharray={RING_C}
+                  initial={{ strokeDashoffset: prefersReduced ? simOffset : RING_C }}
+                  animate={{ strokeDashoffset: simOffset }}
+                  transition={{ duration: prefersReduced ? 0 : 0.6, ease: [0.22, 1, 0.36, 1] }}
+                />
+              )}
+              <motion.circle
+                className={"gc-ring-arc" + (complete ? " complete" : "")}
+                cx="60" cy="60" r={RING_R}
+                strokeDasharray={RING_C}
+                initial={{ strokeDashoffset: prefersReduced ? ringOffset : RING_C }}
+                animate={{ strokeDashoffset: ringOffset }}
+                transition={{ duration: prefersReduced ? 0 : 0.9, ease: [0.22, 1, 0.36, 1] }}
+              />
+              {MILESTONES.map((m) => {
+                const rad = (m / 100) * 2 * Math.PI;
+                const cx = 60 + RING_R * Math.cos(rad);
+                const cy = 60 + RING_R * Math.sin(rad);
+                const reached = pct >= m - 0.001;
+                return (
+                  <circle
+                    key={m}
+                    className={"gc-milestone" + (reached ? " reached" : "") + (complete ? " complete" : "")}
+                    cx={cx} cy={cy} r={3}
+                  />
+                );
+              })}
             </svg>
-          </button>
-        )}
+            <div className="gc-ring-center">
+              <span className={"gc-ring-pct" + (complete ? " complete" : "")}>{pct.toFixed(0)}%</span>
+              <span className="gc-ring-sub">{complete ? "Listo" : "Avance"}</span>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="gc-info">
+          <div className="gc-amounts">
+            {props.formatSoles(g.currentAmount)}
+            {g.targetAmount > 0 && (
+              <span className="gc-amounts-of">
+                {" "}de {props.formatSoles(g.targetAmount)}
+              </span>
+            )}
+            {g.targetAmount > 0 && !props.isEditingTarget && (
+              <button
+                className="gc-chip-btn"
+                onClick={() => props.onEditTargetClick(g.id, String(g.targetAmount))}
+                aria-label={`Editar meta de ${g.title}`}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {g.targetAmount > 0 && (
+            <div className={"gc-remaining" + (complete ? " done" : "")}>
+              {complete ? "Meta cumplida" : `Falta ${props.formatSoles(remaining)}`}
+            </div>
+          )}
+
+          {props.isEditingTarget && (
+            <div className="sd-target-form">
+              <input
+                type="number"
+                value={props.tempTarget}
+                onChange={(e) => props.onTempTargetChange(e.target.value)}
+                autoFocus
+                aria-label={`Nuevo objetivo para ${g.title}`}
+              />
+              <input
+                type="date"
+                value={props.tempTargetDate}
+                onChange={(e) => props.onTempTargetDateChange(e.target.value)}
+                aria-label={`Fecha objetivo para ${g.title} (opcional)`}
+              />
+              <button className="sd-icon-btn" onClick={() => props.onSaveTargetClick(g.id)} aria-label="Guardar">
+                <Check size={15} />
+              </button>
+              <button className="sd-icon-btn" onClick={() => props.onCancelTargetClick()} aria-label="Cancelar">
+                <X size={15} />
+              </button>
+            </div>
+          )}
+
+          {/* ---- Allocation chip / editor -------------------------------- */}
+          {g.targetAmount > 0 && !complete && (
+            props.isEditingAllocation ? (
+              <div className="sd-target-form">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={props.tempAllocation}
+                  onChange={(e) => props.onTempAllocationChange(e.target.value)}
+                  autoFocus
+                  aria-label={`Porcentaje asignado a ${g.title}`}
+                />
+                <button className="sd-icon-btn" onClick={() => props.onSaveAllocationClick(g.id)} aria-label="Guardar">
+                  <Check size={15} />
+                </button>
+                <button className="sd-icon-btn" onClick={() => props.onCancelAllocationClick()} aria-label="Cancelar">
+                  <X size={15} />
+                </button>
+              </div>
+            ) : (
+              <div className="gc-alloc">
+                <span
+                  className={"gc-alloc-chip"
+                    + (g.allocationPct === 0 && !g.allocationManual ? " warn" : g.allocationManual ? "" : " auto")}
+                >
+                  <span className="gc-alloc-num">{g.allocationPct.toFixed(0)}%</span>
+                  del ahorro mensual{g.allocationManual ? "" : " (auto)"}
+                </span>
+                <button
+                  className="gc-chip-btn"
+                  onClick={() => props.onEditAllocationClick(g.id, g.allocationPct)}
+                  aria-label={`Editar porcentaje asignado a ${g.title}`}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                  </svg>
+                </button>
+                {g.allocationManual && (
+                  <button
+                    className="sd-link-btn"
+                    style={{ padding: "0 4px", minHeight: "auto", fontSize: 11 }}
+                    onClick={() => props.onResetAllocationClick(g.id)}
+                    aria-label={`Volver a reparto automático para ${g.title}`}
+                  >
+                    deshacer
+                  </button>
+                )}
+              </div>
+            )
+          )}
+
+          {g.targetAmount > 0 && !complete && g.allocationPct === 0 && !g.allocationManual && !props.isEditingAllocation && (
+            <div className="sd-alloc-warning">
+              <AlertTriangle size={12} /> Sin presupuesto disponible: otras metas con % manual ya usan el 100%. Asignale un % manual o libera espacio en otra meta.
+            </div>
+          )}
+        </div>
       </div>
 
-      {props.isEditingTarget && (
-        <div className="sd-target-form">
-          <input
-            type="number"
-            value={props.tempTarget}
-            onChange={(e) => props.onTempTargetChange(e.target.value)}
-            autoFocus
-            aria-label={`Nuevo objetivo para ${g.title}`}
-          />
-          <input
-            type="date"
-            value={props.tempTargetDate}
-            onChange={(e) => props.onTempTargetDateChange(e.target.value)}
-            aria-label={`Fecha objetivo para ${g.title} (opcional)`}
-          />
-          <button className="sd-icon-btn" onClick={() => props.onSaveTargetClick(g.id)} aria-label="Guardar">
-            <Check size={15} />
-          </button>
-          <button className="sd-icon-btn" onClick={() => props.onCancelTargetClick()} aria-label="Cancelar">
-            <X size={15} />
+      {/* ---- Simulation banner -------------------------------------------- */}
+      {g.targetAmount > 0 && simulatedPct !== null && (
+        <div className={"sd-sim-banner" + (simulatedComplete ? " complete" : "")}>
+          <span>
+            {simulatedComplete
+              ? `¡Completarías esta meta si ${props.simulatedLabel ? `te paga ${props.simulatedLabel}` : "te pagan esta deuda"}! (${simulatedPct.toFixed(0)}%)`
+              : `Si ${props.simulatedLabel ? `te paga ${props.simulatedLabel}` : "te pagan esta deuda"}, llegarías a ${simulatedPct.toFixed(0)}%`}
+          </span>
+          <button
+            className="sd-history-icon-btn"
+            onClick={() => props.onClearSimulation?.()}
+            aria-label="Quitar simulación"
+          >
+            <X size={12} />
           </button>
         </div>
       )}
 
-      {g.targetAmount > 0 && !complete && (
-        props.isEditingAllocation ? (
-          <div className="sd-target-form">
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={props.tempAllocation}
-              onChange={(e) => props.onTempAllocationChange(e.target.value)}
-              autoFocus
-              aria-label={`Porcentaje asignado a ${g.title}`}
-            />
-            <button className="sd-icon-btn" onClick={() => props.onSaveAllocationClick(g.id)} aria-label="Guardar">
-              <Check size={15} />
-            </button>
-            <button className="sd-icon-btn" onClick={() => props.onCancelAllocationClick()} aria-label="Cancelar">
-              <X size={15} />
-            </button>
-          </div>
-        ) : (
-          <div className="sd-pct">
-            Asignación: {g.allocationPct.toFixed(0)}% del ahorro mensual{g.allocationManual ? "" : " (auto)"}
-            {" "}
-            <button
-              className="sd-edit-btn"
-              style={{ display: "inline-flex", verticalAlign: "middle" }}
-              onClick={() => props.onEditAllocationClick(g.id, g.allocationPct)}
-              aria-label={`Editar porcentaje asignado a ${g.title}`}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-              </svg>
-            </button>
-            {g.allocationManual && (
-              <button
-                className="sd-link-btn"
-                style={{ display: "inline-flex", padding: "0 4px", minHeight: "auto", fontSize: 11 }}
-                onClick={() => props.onResetAllocationClick(g.id)}
-                aria-label={`Volver a reparto automático para ${g.title}`}
-              >
-                deshacer
-              </button>
-            )}
-            {g.allocationPct === 0 && !g.allocationManual && (
-              <div className="sd-alloc-warning">
-                <AlertTriangle size={12} /> Sin presupuesto disponible: otras metas con % manual ya usan el 100%. Asignale un % manual o libera espacio en otra meta.
-              </div>
-            )}
-          </div>
-        )
-      )}
-
-      {g.targetAmount > 0 && (
-        <>
-          <div className="sd-bar-track">
-            <motion.div
-              className={"sd-bar-fill" + (complete ? " complete" : "")}
-              initial={{ width: 0 }}
-              animate={{ width: pct + "%" }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-            />
-            {simulatedPct !== null && simulatedPct > pct && (
-              <motion.div
-                className="sd-bar-fill-ghost"
-                initial={{ width: pct + "%" }}
-                animate={{ left: pct + "%", width: (simulatedPct - pct) + "%" }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-              />
-            )}
-          </div>
-          <div className="sd-pct">
-            {pct.toFixed(1)}%{!complete ? ` — falta ${props.formatSoles(remaining)}` : " — meta cumplida"}
-          </div>
-          {simulatedPct !== null && (
-            <div className={"sd-sim-banner" + (simulatedComplete ? " complete" : "")}>
-              <span>
-                {simulatedComplete
-                  ? `¡Completarías esta meta si ${props.simulatedLabel ? `te paga ${props.simulatedLabel}` : "te pagan esta deuda"}! (${simulatedPct.toFixed(0)}%)`
-                  : `Si ${props.simulatedLabel ? `te paga ${props.simulatedLabel}` : "te pagan esta deuda"}, llegarías a ${simulatedPct.toFixed(0)}%`}
-              </span>
-              <button
-                className="sd-history-icon-btn"
-                onClick={() => props.onClearSimulation?.()}
-                aria-label="Quitar simulación"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          )}
-          {projection && projection.mode === "pace-only" && (
+      {/* ---- Projection / ETA hero ---------------------------------------- */}
+      {g.targetAmount > 0 && projection && (
+        <div className="gc-projection">
+          {projection.mode === "pace-only" && (
             props.portfolioCompletionMonth !== null ? (
-              <div className="sd-projection">
-                Estimado con reasignación automática al completar otras metas: {props.portfolioCompletionLabel} ({props.portfolioCompletionMonth} {props.portfolioCompletionMonth === 1 ? "mes" : "meses"})
-              </div>
+              <>
+                <span className="gc-eta-label"><TrendingUp size={12} /> Proyección estimada</span>
+                <span className="gc-eta-value">
+                  {props.portfolioCompletionLabel}
+                  <span className="gc-eta-months">
+                    ({props.portfolioCompletionMonth} {props.portfolioCompletionMonth === 1 ? "mes" : "meses"})
+                  </span>
+                </span>
+                <span className="gc-proj-line muted">Con reasignación automática al completar otras metas</span>
+              </>
             ) : (
-              <div className="sd-projection-track behind">
+              <div className="gc-proj-line behind">
                 <AlertTriangle size={13} /> No alcanzarías esta meta en un plazo razonable con tu ahorro actual.
               </div>
             )
           )}
-          {projection && projection.mode === "target-date" && (
+          {projection.mode === "target-date" && (
             <>
-              <div className="sd-projection">
-                Meta: {projection.targetDateLabel}
-              </div>
-              <div className={"sd-projection-track " + (onTrack ? "on-track" : "behind")}>
+              <span className="gc-eta-label"><TrendingUp size={12} /> Meta</span>
+              <span className="gc-eta-value">{projection.targetDateLabel}</span>
+              <div className={"gc-proj-line " + (onTrack ? "on-track" : "behind")}>
                 {onTrack ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
                 {onTrack
                   ? `Vas al día — con reasignación automática llegarías ${props.portfolioCompletionLabel}`
@@ -296,9 +379,10 @@ export default function GoalCard(props: GoalCardProps) {
               </div>
             </>
           )}
-        </>
+        </div>
       )}
 
+      {/* ---- Actions ------------------------------------------------------ */}
       <div className="sd-actions">
         {!props.isAdding ? (
           <motion.button
@@ -316,15 +400,9 @@ export default function GoalCard(props: GoalCardProps) {
           {props.isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           Historial{g.movements.length > 0 ? ` (${g.movements.length})` : ""}
         </button>
-        <button
-          className="sd-link-btn danger"
-          onClick={() => props.onDeleteClick(g.id)}
-          aria-label={`Eliminar meta "${g.title}"`}
-        >
-          <X size={12} /> Eliminar
-        </button>
       </div>
 
+      {/* ---- Add-movement form (revealed via the Movimiento button) ------- */}
       <AnimatePresence>
         {props.isAdding && (
           <motion.div
@@ -332,7 +410,7 @@ export default function GoalCard(props: GoalCardProps) {
             initial={{ height: 0, opacity: 0, marginTop: 0, paddingTop: 0 }}
             animate={{ height: "auto", opacity: 1, marginTop: 12, paddingTop: 12 }}
             exit={{ height: 0, opacity: 0, marginTop: 0, paddingTop: 0 }}
-            transition={{ duration: 0.25 }}
+            transition={{ duration: prefersReduced ? 0 : 0.25 }}
           >
             <div className="sd-kind-toggle">
               <button
@@ -381,6 +459,7 @@ export default function GoalCard(props: GoalCardProps) {
         )}
       </AnimatePresence>
 
+      {/* ---- Detail layer: paginated movement history --------------------- */}
       <AnimatePresence>
         {props.isExpanded && (
           <motion.div
@@ -388,7 +467,7 @@ export default function GoalCard(props: GoalCardProps) {
             initial={{ height: 0, opacity: 0, marginTop: 0, paddingTop: 0 }}
             animate={{ height: "auto", opacity: 1, marginTop: 10, paddingTop: 8 }}
             exit={{ height: 0, opacity: 0, marginTop: 0, paddingTop: 0 }}
-            transition={{ duration: 0.25 }}
+            transition={{ duration: prefersReduced ? 0 : 0.25 }}
           >
             {allMovements.length === 0 ? (
               <div className="sd-history-empty">Sin movimientos todav&iacute;a</div>

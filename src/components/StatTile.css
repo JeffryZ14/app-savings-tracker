@@ -1,0 +1,116 @@
+.stat-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-1);
+  overflow: hidden;
+  transition: box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.stat-tile:hover {
+  box-shadow: var(--e-2);
+  transform: translateY(-2px);
+}
+
+/* Top accent bar, only present when an accent is set */
+.stat-tile__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--neutral);
+}
+
+.stat-tile--brand .stat-tile__bar {
+  background: var(--brand);
+}
+.stat-tile--gold .stat-tile__bar {
+  background: var(--gold);
+}
+.stat-tile--negative .stat-tile__bar {
+  background: var(--negative);
+}
+.stat-tile--neutral .stat-tile__bar {
+  background: var(--neutral);
+}
+
+.stat-tile__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: var(--sp-1);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.stat-tile--brand .stat-tile__icon {
+  background: var(--brand-soft);
+  border-color: transparent;
+  color: var(--brand-strong);
+}
+.stat-tile--negative .stat-tile__icon {
+  background: var(--negative-soft);
+  border-color: transparent;
+  color: var(--negative);
+}
+
+.stat-tile__label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stat-tile__value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(22px, 4vw, 30px);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.stat-tile--brand .stat-tile__value {
+  color: var(--brand-strong);
+}
+.stat-tile--gold .stat-tile__value {
+  color: var(--gold);
+}
+.stat-tile--negative .stat-tile__value {
+  color: var(--negative);
+}
+.stat-tile--neutral .stat-tile__value {
+  color: var(--neutral);
+}
+
+.stat-tile__sub {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-tile {
+    transition: none;
+  }
+  .stat-tile:hover {
+    transform: none;
+  }
+}

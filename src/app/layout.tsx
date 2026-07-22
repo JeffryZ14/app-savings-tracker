@@ -37,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={`${bricolage.variable} ${inter.variable} ${ibmPlexMono.variable}`}>
+    <html lang="es" suppressHydrationWarning className={`${bricolage.variable} ${inter.variable} ${ibmPlexMono.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

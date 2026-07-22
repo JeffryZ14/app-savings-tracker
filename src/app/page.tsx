@@ -12,7 +12,7 @@ import {
   Tooltip,
   ReferenceLine,
 } from "recharts";
-import { Plus, X, Check } from "lucide-react";
+import { Plus, X, Check, Pencil } from "lucide-react";
 
 import "./savings.css";
 import {
@@ -31,6 +31,8 @@ import {
 import { getDebts, deleteDebt, deleteDebtPayment } from "@/features/debts/actions";
 import { simulatePortfolio } from "@/lib/projection";
 import GoalCard from "@/components/GoalCard";
+import StatTile from "@/components/StatTile";
+import AllocationDonut from "@/components/AllocationDonut";
 import DebtsSection, { type DebtData, type SimulationTargetGoal } from "@/components/DebtsSection";
 import ThemeToggle from "@/components/ThemeToggle";
 import DeleteConfirmModal, { type DeleteTarget } from "@/components/DeleteConfirmModal";
@@ -271,7 +273,7 @@ export default function SavingsLedger() {
   }, [monthHistory, monthlyRate, monthlyMet]);
 
   const chartData = monthHistory
-    .slice(0, 6)
+    .slice(0, 12)
     .reverse()
     .map((m) => ({ ...m, label: MONTH_LABELS[m.month] }));
 
@@ -444,110 +446,133 @@ export default function SavingsLedger() {
       {isLoading && <div className="sd-wrap"><Skeleton /></div>}
 
       <div className="sd-wrap" style={{ display: isLoading ? "none" : "block" }}>
-        <motion.div
-          className="sd-hero"
-          initial={{ opacity: 0, y: -10 }}
+        <motion.section
+          className="sd-resumen"
+          initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
-          <p className="sd-hero-eyebrow">Libreta de Ahorros</p>
-          <p className="sd-hero-label">Saldo total</p>
-          <div className="sd-hero-amount">{formatSoles(totalCurrentAll)}</div>
-
-          <div className="sd-hero-meta">
-            {totalTarget > 0 && (
-              <span className="sd-hero-chip">{overallPct.toFixed(1)}% de tus metas</span>
-            )}
-            {totalReceivable > 0 && (
-              <span className="sd-hero-chip">Por cobrar {formatSoles(totalReceivable)}</span>
-            )}
+          <div className="sd-kpis">
+            <StatTile
+              label="Saldo total"
+              value={formatSoles(totalCurrentAll)}
+              accent="brand"
+              sub={totalTarget > 0 ? `${overallPct.toFixed(0)}% de tus metas` : "Sin objetivo definido"}
+            />
+            <StatTile
+              label="Este mes"
+              value={formatSoles(currentMonthTotal)}
+              accent={monthlyMet ? "brand" : "gold"}
+              sub={
+                monthlyMet
+                  ? `Meta cumplida · ${formatSoles(monthlyRate)}`
+                  : `de ${formatSoles(monthlyRate)} · faltan ${formatSoles(monthRemaining)}`
+              }
+            />
+            <StatTile
+              label="Por cobrar"
+              value={totalReceivable > 0 ? formatSoles(totalReceivable) : "—"}
+              accent="neutral"
+              sub={totalReceivable > 0 ? "Deudas a tu favor" : "Nada pendiente"}
+            />
+            <StatTile
+              label="Racha"
+              value={streak > 0 ? `${streak} ${streak === 1 ? "mes" : "meses"}` : "—"}
+              accent="gold"
+              sub={
+                streak >= 2
+                  ? "🔥 meses seguidos"
+                  : streak === 1
+                  ? "¡vas empezando!"
+                  : "Cumple tu meta mensual"
+              }
+            />
           </div>
 
-          <div className="sd-hero-progress">
-            <div className="sd-hero-track">
+          <div className="sd-progress-band">
+            <div className="sd-pb-top">
+              <span className="sd-pb-title">Progreso hacia tus metas</span>
+              <span className="sd-pb-amounts sd-mono">
+                {formatSoles(totalCurrentTargeted)} de {formatSoles(totalTarget)}
+              </span>
+            </div>
+            <div className="sd-pb-track">
               <motion.div
-                className="sd-hero-fill"
+                className={"sd-pb-fill" + (overallPct >= 100 ? " complete" : "")}
                 initial={{ width: 0 }}
                 animate={{ width: overallPct + "%" }}
                 transition={{ duration: 0.7, ease: "easeOut" }}
               />
             </div>
-            <div className="sd-hero-caption">
-              <span>
-                {formatSoles(totalCurrentTargeted)} de {formatSoles(totalTarget)}
-              </span>
+            <div className="sd-pb-foot">
+              <span className="sd-pb-pct sd-mono">{overallPct.toFixed(1)}%</span>
               {!rateEdit.editing ? (
-                <button className="sd-rate-edit" onClick={() => setRateEdit({ editing: true, value: String(monthlyRate) })}>
-                  ahorro mensual: {formatSoles(monthlyRate)}
+                <button
+                  className="sd-rate-btn"
+                  onClick={() => setRateEdit({ editing: true, value: String(monthlyRate) })}
+                >
+                  Ahorro mensual: {formatSoles(monthlyRate)}
+                  <Pencil size={13} />
                 </button>
               ) : (
-                <span className="sd-rate-form">
+                <span className="sd-rate-form2">
                   <input
                     type="number"
+                    className="sd-rate-input"
                     value={rateEdit.value}
                     onChange={(e) => setRateEdit((s) => ({ ...s, value: e.target.value }))}
                     autoFocus
                     aria-label="Ahorro mensual estimado"
                   />
-                  <button className="sd-icon-btn" style={{ color: "var(--gold)" }} onClick={handleSaveRate} aria-label="Guardar">
+                  <button className="sd-icon-btn" onClick={handleSaveRate} aria-label="Guardar">
                     <Check size={15} />
                   </button>
-                  <button className="sd-icon-btn" style={{ color: "var(--gold)" }} onClick={() => setRateEdit((s) => ({ ...s, editing: false }))} aria-label="Cancelar">
+                  <button className="sd-icon-btn" onClick={() => setRateEdit((s) => ({ ...s, editing: false }))} aria-label="Cancelar">
                     <X size={15} />
                   </button>
                 </span>
               )}
             </div>
           </div>
-        </motion.div>
+        </motion.section>
 
         <motion.div
-          className="sd-monthly-card"
+          className="sd-dashgrid"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.1 }}
         >
-          <div className="sd-monthly-head">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span className="sd-monthly-badge">{monthlyMet ? '✅' : '⏳'}</span>
-              <div>
-                <p className="sd-monthly-label">Ahorro Mensual</p>
-                <p className="sd-monthly-sub">
-                  {formatSoles(currentMonthTotal)} <span className="muted">de {formatSoles(monthlyRate)}</span>
-                  {!monthlyMet && monthRemaining > 0 && (
-                    <span className="muted"> · faltan {formatSoles(monthRemaining)}</span>
-                  )}
-                </p>
-              </div>
+          <AllocationDonut goals={goals} monthlyRate={monthlyRate} formatSoles={formatSoles} />
+
+          <div className="sd-trend-card">
+            <div className="sd-trend-head">
+              <span className="sd-trend-title">Tendencia mensual</span>
+              <span className="sd-trend-sub sd-mono">Meta {formatSoles(monthlyRate)}</span>
             </div>
-            {streak >= 2 && (
-              <span className="sd-streak-chip" title={`${streak} meses seguidos cumpliendo tu meta mensual`}>
-                🔥 {streak} meses seguidos
-              </span>
+            {chartData.length > 0 ? (
+              <div className="sd-trend-chart" role="img" aria-label={`Gráfico de ahorros mensuales. Meta mensual: ${formatSoles(monthlyRate)}. Mes actual: ${formatSoles(currentMonthTotal)}`}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="0" />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fontFamily: "var(--font-mono)", fontSize: 11, fill: "var(--muted)" }}
+                    />
+                    <YAxis hide />
+                    <Tooltip content={<MonthlyTooltip monthlyRate={monthlyRate} />} cursor={{ fill: "var(--brand-soft)" }} />
+                    {monthlyRate > 0 && (
+                      <ReferenceLine y={monthlyRate} stroke="var(--gold)" strokeDasharray="4 4" strokeWidth={1} />
+                    )}
+                    <Bar dataKey="total" fill="var(--brand)" radius={[5, 5, 0, 0]} maxBarSize={30} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="sd-trend-empty">Aún no hay historial mensual.</p>
             )}
           </div>
-
-          {chartData.length > 0 && (
-            <div className="sd-chart-wrap" role="img" aria-label={`Gráfico de ahorros mensuales. Últimos 6 meses. Meta mensual: ${formatSoles(monthlyRate)}. Mes actual: ${formatSoles(currentMonthTotal)}`}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                  <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="0" />
-                  <XAxis
-                    dataKey="label"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontFamily: "var(--font-mono)", fontSize: 11, fill: "var(--muted)" }}
-                  />
-                  <YAxis hide />
-                  <Tooltip content={<MonthlyTooltip monthlyRate={monthlyRate} />} cursor={{ fill: "var(--brand-soft)" }} />
-                  {monthlyRate > 0 && (
-                    <ReferenceLine y={monthlyRate} stroke="var(--gold)" strokeDasharray="4 4" strokeWidth={1} />
-                  )}
-                  <Bar dataKey="total" fill="var(--brand)" radius={[5, 5, 0, 0]} maxBarSize={28} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
         </motion.div>
 
         <div className="sd-section-head">

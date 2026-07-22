@@ -1,0 +1,295 @@
+/* GoalCard structural styles (.gc-* namespace).
+   Owns the compact header, progress ring + milestones, chips, ETA hero
+   and completion celebration. Form / history / button styling stays in
+   savings.css (.sd-*), which this component keeps referencing.
+   Colors come exclusively from the global token contract in globals.css. */
+
+/* ---- Compact header ---------------------------------------------------- */
+.gc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.gc-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.gc-title-icon {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.gc-delete {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--r-sm);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.gc-delete:hover {
+  background: var(--negative-soft);
+  color: var(--negative);
+}
+
+/* ---- Compact body: ring + info ---------------------------------------- */
+.gc-body {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+}
+.gc-ring-wrap {
+  position: relative;
+  width: 116px;
+  height: 116px;
+  flex-shrink: 0;
+}
+.gc-ring {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transform: rotate(-90deg);
+}
+.gc-ring-track {
+  fill: none;
+  stroke: var(--surface-2);
+  stroke-width: 9;
+}
+.gc-ring-arc {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+.gc-ring-arc.complete { stroke: var(--gold); }
+.gc-ring-sim {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 9;
+  stroke-linecap: round;
+  opacity: 0.4;
+  stroke-dasharray: 2 6;
+}
+.gc-milestone {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 2;
+}
+.gc-milestone.reached {
+  fill: var(--brand);
+  stroke: var(--brand);
+}
+.gc-milestone.reached.complete {
+  fill: var(--gold);
+  stroke: var(--gold);
+}
+.gc-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  pointer-events: none;
+}
+.gc-ring-pct {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1;
+}
+.gc-ring-pct.complete { color: var(--gold); }
+.gc-ring-sub {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.gc-info {
+  flex: 1 1 160px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.gc-amounts {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  flex-wrap: wrap;
+  line-height: 1.15;
+}
+.gc-amounts-of {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.gc-remaining {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--muted);
+}
+.gc-remaining.done { color: var(--gold); font-weight: 600; }
+
+/* ---- Allocation chip -------------------------------------------------- */
+.gc-alloc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.gc-alloc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--brand);
+  background: var(--brand-soft);
+  border: 1px solid color-mix(in srgb, var(--brand) 22%, transparent);
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.gc-alloc-chip .gc-alloc-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.gc-alloc-chip.auto {
+  color: var(--muted);
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+.gc-alloc-chip.warn {
+  color: var(--negative);
+  background: var(--negative-soft);
+  border-color: color-mix(in srgb, var(--negative) 30%, transparent);
+}
+.gc-chip-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  min-height: 26px;
+  border-radius: var(--r-sm);
+}
+.gc-chip-btn:hover { background: var(--surface-2); color: var(--text); }
+
+/* ---- Projection / ETA hero -------------------------------------------- */
+.gc-projection {
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.gc-eta-label {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.gc-eta-value {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.gc-eta-value .gc-eta-months {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 4px;
+}
+.gc-proj-line {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  line-height: 1.4;
+}
+.gc-proj-line svg { flex-shrink: 0; margin-top: 1px; }
+.gc-proj-line.on-track { color: var(--brand); }
+.gc-proj-line.behind { color: var(--negative); }
+.gc-proj-line.muted { color: var(--muted); }
+
+/* ---- Completion celebration ------------------------------------------- */
+.gc-celebrate {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(120% 90% at 50% -10%,
+      color-mix(in srgb, var(--gold) 20%, transparent) 0%,
+      transparent 60%);
+}
+.gc-card-complete {
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--border));
+}
+.gc-card-complete > * { position: relative; z-index: 1; }
+
+/* ---- Divider before the expandable detail layer ----------------------- */
+.gc-detail-hint {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+/* ---- Reduced motion --------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .gc-celebrate { transition: none; }
+}

@@ -120,6 +120,85 @@
   background: rgba(255,255,255,0.12); color: #fff;
 }
 
+/* ===== Redesign: banda Resumen (KPIs + progreso) y dashboard (dona + tendencia) ===== */
+.sd-resumen {
+  margin-top: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.sd-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-4);
+}
+.sd-progress-band {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-1);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.sd-pb-top {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: var(--sp-3); flex-wrap: wrap;
+}
+.sd-pb-title { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.sd-pb-amounts { font-size: 13px; color: var(--muted); }
+.sd-pb-track {
+  height: 10px; border-radius: var(--r-pill);
+  background: var(--surface-2); border: 1px solid var(--border); overflow: hidden;
+}
+.sd-pb-fill { height: 100%; border-radius: var(--r-pill); background: var(--brand); }
+.sd-pb-fill.complete { background: var(--gold); }
+.sd-pb-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: var(--sp-3); flex-wrap: wrap;
+}
+.sd-pb-pct { font-size: 20px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.sd-rate-btn {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 7px 11px; min-height: 34px; cursor: pointer; color: var(--text);
+  font-family: var(--font-mono); font-size: 12.5px;
+  display: inline-flex; align-items: center; gap: 7px;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.sd-rate-btn:hover { border-color: var(--brand); color: var(--brand); }
+.sd-rate-form2 { display: inline-flex; gap: 6px; align-items: center; }
+.sd-rate-input {
+  width: 110px; font-family: var(--font-mono); font-size: 13px; padding: 7px 9px;
+  border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+}
+.sd-dashgrid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4);
+  margin-top: var(--sp-5); align-items: start;
+}
+.sd-trend-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); box-shadow: var(--e-1); padding: var(--sp-5);
+}
+.sd-trend-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: var(--sp-3); margin-bottom: var(--sp-3);
+}
+.sd-trend-title { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.sd-trend-sub { font-size: 12px; color: var(--muted); }
+.sd-trend-chart { height: 200px; }
+.sd-trend-empty {
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--muted);
+  font-style: italic; padding: var(--sp-5) 0; text-align: center;
+}
+@media (max-width: 820px) {
+  .sd-kpis { grid-template-columns: repeat(2, 1fr); }
+  .sd-dashgrid { grid-template-columns: 1fr; }
+}
+@media (max-width: 380px) {
+  .sd-kpis { grid-template-columns: 1fr; }
+}
+
 /* Section heading */
 .sd-section-head {
   display: flex; align-items: baseline; justify-content: space-between;
