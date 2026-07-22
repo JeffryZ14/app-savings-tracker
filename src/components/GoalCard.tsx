@@ -226,6 +226,11 @@ export default function GoalCard(props: GoalCardProps) {
                 deshacer
               </button>
             )}
+            {g.allocationPct === 0 && !g.allocationManual && (
+              <div className="sd-alloc-warning">
+                <AlertTriangle size={12} /> Sin presupuesto disponible: otras metas con % manual ya usan el 100%. Asignale un % manual o libera espacio en otra meta.
+              </div>
+            )}
           </div>
         )
       )}
@@ -267,10 +272,16 @@ export default function GoalCard(props: GoalCardProps) {
               </button>
             </div>
           )}
-          {projection && projection.mode === "pace-only" && props.portfolioCompletionMonth !== null && (
-            <div className="sd-projection">
-              Estimado con reasignación automática al completar otras metas: {props.portfolioCompletionLabel} ({props.portfolioCompletionMonth} {props.portfolioCompletionMonth === 1 ? "mes" : "meses"})
-            </div>
+          {projection && projection.mode === "pace-only" && (
+            props.portfolioCompletionMonth !== null ? (
+              <div className="sd-projection">
+                Estimado con reasignación automática al completar otras metas: {props.portfolioCompletionLabel} ({props.portfolioCompletionMonth} {props.portfolioCompletionMonth === 1 ? "mes" : "meses"})
+              </div>
+            ) : (
+              <div className="sd-projection-track behind">
+                <AlertTriangle size={13} /> No alcanzarías esta meta en un plazo razonable con tu ahorro actual.
+              </div>
+            )
           )}
           {projection && projection.mode === "target-date" && (
             <>

@@ -628,6 +628,12 @@ export default function SavingsLedger() {
           );
         }
         .sd-pct { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+        .sd-alloc-warning {
+          display: flex; align-items: flex-start; gap: 5px;
+          font-family: var(--font-ui); font-size: 11.5px; color: var(--negative);
+          margin-top: 6px; line-height: 1.4;
+        }
+        .sd-alloc-warning svg { flex-shrink: 0; margin-top: 1px; }
         .sd-projection { font-size: 12.5px; color: var(--muted); margin-top: 7px; }
         .sd-projection-track { font-family: var(--font-mono); font-size: 12px; margin-top: 6px; display: flex; align-items: center; gap: 5px; }
         .sd-projection-track.on-track { color: var(--brand); }
