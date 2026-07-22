@@ -437,7 +437,11 @@ export default function GoalCard(props: GoalCardProps) {
                         <ArrowUpCircle size={13} color="#A93226" />
                       )}
                       <span>{format(new Date(m.createdAt), "d MMM", { locale: es })}</span>
-                      {m.description && <span className="sd-history-desc">&middot; {m.description}</span>}
+                      {m.description && (
+                        <span className="sd-history-desc" title={m.description}>
+                          &middot; {m.description === "Monto inicial" ? "Inicial" : m.description}
+                        </span>
+                      )}
                     </div>
                     <span className={"sd-history-amt " + m.type}>
                       {m.type === "deposit" ? "+" : "-"}{props.formatSoles(m.amount)}
