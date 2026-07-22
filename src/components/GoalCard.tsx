@@ -140,28 +140,27 @@ export default function GoalCard(props: GoalCardProps) {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {complete && (
-          <motion.div
-            className="sd-stamp"
-            initial={{ opacity: 0, scale: 0.8, y: -4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={prefersReduced ? { duration: 0 } : { type: "spring", stiffness: 320, damping: 20 }}
-          >
-            <span className="sd-badge-complete">
-              <CheckCircle2 size={12} /> Completado
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* ---- Compact header ------------------------------------------------ */}
       <div className="gc-head">
         <h2 className="gc-title">
           <span className="gc-title-icon">{g.icon}</span>
           <span>{g.title}</span>
         </h2>
+        <AnimatePresence>
+          {complete && (
+            <motion.div
+              className="sd-stamp"
+              initial={{ opacity: 0, scale: 0.8, y: -4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={prefersReduced ? { duration: 0 } : { type: "spring", stiffness: 320, damping: 20 }}
+            >
+              <span className="sd-badge-complete">
+                <CheckCircle2 size={12} /> Completado
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <button
           className="gc-delete"
           onClick={() => props.onDeleteClick(g.id)}

@@ -8,11 +8,20 @@
 .gc-head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: var(--sp-2);
   margin-bottom: var(--sp-3);
 }
+/* .sd-stamp is shared (position:absolute by default in savings.css); here it
+   sits inline in the header flex row instead, so it can never overlap
+   .gc-delete regardless of title length. Descendant selector outranks the
+   shared single-class rule regardless of CSS file load order. */
+.gc-head .sd-stamp {
+  position: static;
+  flex-shrink: 0;
+}
 .gc-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 16px;
@@ -279,7 +288,7 @@
 .gc-card-complete {
   border-color: color-mix(in srgb, var(--gold) 45%, var(--border));
 }
-.gc-card-complete > * { position: relative; z-index: 1; }
+.gc-card-complete > *:not(.gc-celebrate):not(.sd-stamp) { position: relative; z-index: 1; }
 
 /* ---- Divider before the expandable detail layer ----------------------- */
 .gc-detail-hint {

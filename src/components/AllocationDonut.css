@@ -8,11 +8,20 @@
   font-family: var(--font-ui);
 }
 
+/* Chart (left) + legend (right) side by side; wraps to stacked on narrow cards */
+.donut-body {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+}
+
 /* Chart + overlaid center label */
 .donut-chart-wrap {
   position: relative;
   width: 100%;
-  max-width: 320px;
+  max-width: 190px;
+  flex: 0 0 auto;
   margin: 0 auto;
   aspect-ratio: 1 / 1;
 }
@@ -45,11 +54,11 @@
 
 .donut-center-value {
   font-family: var(--font-mono);
-  font-size: 1.5rem;
+  font-size: 1.1rem;
   font-weight: 600;
   color: var(--text);
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: 1.15;
 }
 
 /* Over-allocation warning */
@@ -64,8 +73,10 @@
 /* Legend */
 .donut-legend {
   list-style: none;
-  margin: var(--sp-4) 0 0;
+  margin: 0;
   padding: 0;
+  flex: 1 1 160px;
+  min-width: 160px;
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);

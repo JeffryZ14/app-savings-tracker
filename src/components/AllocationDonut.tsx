@@ -160,44 +160,62 @@ export default function AllocationDonut({
 
   return (
     <div className="donut-card">
-      <div className="donut-chart-wrap" role="img" aria-label={ariaLabel}>
-        <div className="donut-chart">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={slices}
-                dataKey="pct"
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                innerRadius="62%"
-                outerRadius="90%"
-                paddingAngle={slices.length > 1 ? 1.5 : 0}
-                stroke="none"
-                startAngle={90}
-                endAngle={-270}
-                isAnimationActive={!reducedMotion}
-              >
-                {slices.map((slice) => (
-                  <Cell key={slice.id} fill={slice.color} />
-                ))}
-              </Pie>
-              <Tooltip
-                content={
-                  <DonutTooltip
-                    monthlyRate={monthlyRate}
-                    formatSoles={formatSoles}
-                  />
-                }
-              />
-            </PieChart>
-          </ResponsiveContainer>
+      <div className="donut-body">
+        <div className="donut-chart-wrap" role="img" aria-label={ariaLabel}>
+          <div className="donut-chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={slices}
+                  dataKey="pct"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius="62%"
+                  outerRadius="90%"
+                  paddingAngle={slices.length > 1 ? 1.5 : 0}
+                  stroke="none"
+                  startAngle={90}
+                  endAngle={-270}
+                  isAnimationActive={!reducedMotion}
+                >
+                  {slices.map((slice) => (
+                    <Cell key={slice.id} fill={slice.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  content={
+                    <DonutTooltip
+                      monthlyRate={monthlyRate}
+                      formatSoles={formatSoles}
+                    />
+                  }
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="donut-center" aria-hidden="true">
+            <span className="donut-center-label">Ahorro mensual</span>
+            <span className="donut-center-value">{formatSoles(monthlyRate)}</span>
+          </div>
         </div>
 
-        <div className="donut-center" aria-hidden="true">
-          <span className="donut-center-label">Ahorro mensual</span>
-          <span className="donut-center-value">{formatSoles(monthlyRate)}</span>
-        </div>
+        <ul className="donut-legend">
+          {slices.map((slice) => (
+            <li key={slice.id} className="donut-legend-item">
+              <span
+                className="donut-legend-dot"
+                style={{ backgroundColor: slice.color }}
+                aria-hidden="true"
+              />
+              <span className="donut-legend-name" title={slice.name}>
+                {slice.name}
+              </span>
+              <span className="donut-legend-pct">{slice.displayPct}%</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {overAllocated && (
@@ -205,22 +223,6 @@ export default function AllocationDonut({
           Asignación supera 100%
         </p>
       )}
-
-      <ul className="donut-legend">
-        {slices.map((slice) => (
-          <li key={slice.id} className="donut-legend-item">
-            <span
-              className="donut-legend-dot"
-              style={{ backgroundColor: slice.color }}
-              aria-hidden="true"
-            />
-            <span className="donut-legend-name" title={slice.name}>
-              {slice.name}
-            </span>
-            <span className="donut-legend-pct">{slice.displayPct}%</span>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
