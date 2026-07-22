@@ -28,6 +28,7 @@ import {
   updateMonthlyRate,
 } from "@/features/goals/actions";
 import { getDebts, deleteDebt, deleteDebtPayment } from "@/features/debts/actions";
+import { _backfillInitialByTitle } from "@/features/goals/actions"; // TEMP: quitar tras usar una vez en prod
 import { simulatePortfolio } from "@/lib/projection";
 import GoalCard from "@/components/GoalCard";
 import DebtsSection, { type DebtData, type SimulationTargetGoal } from "@/components/DebtsSection";
@@ -1105,6 +1106,18 @@ export default function SavingsLedger() {
           onSimulate={(debtId, goalId) => setSimulation({ debtId, goalId })}
           onClearSimulation={() => setSimulation(null)}
         />
+
+        {/* TEMP: migración única, quitar tras usarla */}
+        <button
+          style={{ marginTop: 24, fontSize: 11, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}
+          onClick={async () => {
+            const res = await _backfillInitialByTitle(["Barcelona", "Auto (Geely GX3 Pro CVT Exclusive)", "Fondo Emergencia"]);
+            setErrorMsg(JSON.stringify(res.results));
+            await loadData();
+          }}
+        >
+          Migración temporal: marcar saldos iniciales
+        </button>
       </div>
     </main>
   );

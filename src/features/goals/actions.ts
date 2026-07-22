@@ -526,3 +526,24 @@ export async function updateMonthlyRate(rate: number) {
     return { success: false, error: "Error al actualizar la tasa mensual" };
   }
 }
+
+// MIGRACIÓN TEMPORAL — quitar después de usarla una vez en prod.
+// Marca como isInitial el único movimiento de metas que ya tenían saldo desde antes de
+// que existiera el campo "monto inicial" (para que no cuenten como ahorro del mes).
+// Solo toca una meta si tiene EXACTAMENTE 1 movimiento — si algo no calza, no hace nada.
+export async function _backfillInitialByTitle(titles: string[]) {
+  const results = await withDb((db) => {
+    const out: Record<string, string> = {};
+    for (const title of titles) {
+      const g = db.goals.find((x) => x.title === title);
+      if (!g) { out[title] = "no encontrada"; continue; }
+      if (g.movements.length !== 1) { out[title] = `tiene ${g.movements.length} movimientos, no se toca`; continue; }
+      if (g.movements[0].isInitial) { out[title] = "ya estaba marcado"; continue; }
+      g.movements[0].isInitial = true;
+      out[title] = "marcado";
+    }
+    return out;
+  });
+  revalidatePath("/");
+  return { success: true, results };
+}

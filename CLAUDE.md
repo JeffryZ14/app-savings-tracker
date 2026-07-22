@@ -52,7 +52,7 @@ Always `docker compose down` before rebuilding — an old container left running
 
 ### Deployed on Railway
 
-- **Live URL**: <https://app-savings-tracker.up.railway.app> (renamed from the auto-generated `ahorros-production-f583.up.railway.app` to match the project/service name).
+- **Live URL**: <https://app-savings-tracker-production.up.railway.app> — Railway's standard `<service>-<environment>` domain pattern. (An earlier custom rename to `app-savings-tracker.up.railway.app` no longer resolves — treat this `-production` domain as current.)
 - **Project + service**: both named `app-savings-tracker` on Railway, matching the GitHub repo name (`JeffryZ14/app-savings-tracker`) — see `naming/deployments.md` in the `second-brain` repo for why this must match (it didn't at first; had to rename after the fact via GraphQL, since Railway CLI doesn't expose project/service rename).
 - **Deploy trigger**: GitHub-connected, branch `main` — every push to `main` auto-builds and redeploys. Builder is `DOCKERFILE` (auto-detected from the repo's `Dockerfile`, not Railpack).
 - **Persistent volume**: 5GB, mounted at `/app/data`, matches `DATA_DIR` default. This is the real, persistent `data/db.json` in production — separate from whatever's in your local `data/` folder.
