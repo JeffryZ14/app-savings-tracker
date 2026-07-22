@@ -22,10 +22,30 @@ export interface Goal {
   isCompleted: boolean;
   createdAt: string;
   movements: Movement[];
+  /** % manual del ahorro mensual asignado a esta meta (0-100). null = reparto automático entre metas activas. */
+  allocationPct: number | null;
+}
+
+export interface DebtPayment {
+  id: string;
+  amount: number;
+  description: string | null;
+  createdAt: string;
+}
+
+export interface Debt {
+  id: string;
+  person: string;
+  concept: string | null;
+  amount: number;
+  payments: DebtPayment[];
+  createdAt: string;
+  isSettled: boolean;
 }
 
 export interface DbShape {
   goals: Goal[];
+  debts: Debt[];
   monthlyRate: number;
 }
 
@@ -41,7 +61,7 @@ async function ensureFile(): Promise<void> {
   try {
     await fs.access(DB_FILE);
   } catch {
-    const empty: DbShape = { goals: [], monthlyRate: 1421 };
+    const empty: DbShape = { goals: [], debts: [], monthlyRate: 1421 };
     await fs.writeFile(DB_FILE, JSON.stringify(empty, null, 2), "utf-8");
   }
 }
@@ -52,11 +72,12 @@ async function readDb(): Promise<DbShape> {
   try {
     const parsed = JSON.parse(raw) as DbShape;
     return {
-      goals: parsed.goals ?? [],
+      goals: (parsed.goals ?? []).map((g) => ({ ...g, allocationPct: g.allocationPct ?? null })),
+      debts: parsed.debts ?? [],
       monthlyRate: parsed.monthlyRate ?? 1421,
     };
   } catch {
-    return { goals: [], monthlyRate: 1421 };
+    return { goals: [], debts: [], monthlyRate: 1421 };
   }
 }
 

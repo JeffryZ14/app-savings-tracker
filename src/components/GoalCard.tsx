@@ -23,6 +23,8 @@ interface GoalData {
   targetDate: string | null;
   isCompleted: boolean;
   createdAt: string;
+  allocationPct: number;
+  allocationManual: boolean;
   movements: MovementData[];
 }
 
@@ -50,10 +52,12 @@ interface GoalCardProps {
   isAdding: boolean;
   isExpanded: boolean;
   isEditingTarget: boolean;
+  isEditingAllocation: boolean;
   movementKind: "deposit" | "withdrawal";
   amountInput: string;
   tempTarget: string;
   tempTargetDate: string;
+  tempAllocation: string;
   idx: number;
   onAddClick: (id: string) => void;
   onExpandClick: (id: string) => void;
@@ -61,6 +65,11 @@ interface GoalCardProps {
   onEditTargetClick: (id: string, target: string) => void;
   onSaveTargetClick: (id: string) => void;
   onCancelTargetClick: () => void;
+  onEditAllocationClick: (id: string, current: number) => void;
+  onSaveAllocationClick: (id: string) => void;
+  onCancelAllocationClick: () => void;
+  onResetAllocationClick: (id: string) => void;
+  onTempAllocationChange: (v: string) => void;
   onMovementKindChange: (kind: "deposit" | "withdrawal") => void;
   onAmountChange: (amount: string) => void;
   onQuickAmountClick: (amount: number) => void;
@@ -77,7 +86,8 @@ export default function GoalCard(props: GoalCardProps) {
   const pct = g.targetAmount > 0 ? Math.min(100, (g.currentAmount / g.targetAmount) * 100) : 0;
   const complete = g.targetAmount > 0 && g.currentAmount >= g.targetAmount;
   const remaining = g.targetAmount > 0 ? Math.max(0, g.targetAmount - g.currentAmount) : 0;
-  const projection = calculateProjection(g, props.monthlyRate);
+  const allocatedMonthly = props.monthlyRate * (g.allocationPct / 100);
+  const projection = calculateProjection(g, allocatedMonthly);
 
   const allMovements = [...g.movements, ...props.movementHistory.items];
 
@@ -94,15 +104,14 @@ export default function GoalCard(props: GoalCardProps) {
         {complete && (
           <motion.div
             className="sd-stamp"
-            aria-hidden="true"
-            initial={{ opacity: 0, scale: 0.6, rotate: 0 }}
-            animate={{ opacity: 1, scale: 1, rotate: -16 }}
-            exit={{ opacity: 0, scale: 0.6 }}
-            transition={{ type: "spring", stiffness: 260, damping: 16 }}
+            initial={{ opacity: 0, scale: 0.8, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ type: "spring", stiffness: 320, damping: 20 }}
           >
-            <div className="sd-stamp-ring">
-              <span>Completado</span>
-            </div>
+            <span className="sd-badge-complete">
+              <CheckCircle2 size={12} /> Completado
+            </span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -157,6 +166,54 @@ export default function GoalCard(props: GoalCardProps) {
         </div>
       )}
 
+      {g.targetAmount > 0 && !complete && (
+        props.isEditingAllocation ? (
+          <div className="sd-target-form">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={props.tempAllocation}
+              onChange={(e) => props.onTempAllocationChange(e.target.value)}
+              autoFocus
+              aria-label={`Porcentaje asignado a ${g.title}`}
+            />
+            <button className="sd-icon-btn" onClick={() => props.onSaveAllocationClick(g.id)} aria-label="Guardar">
+              <Check size={15} />
+            </button>
+            <button className="sd-icon-btn" onClick={() => props.onCancelAllocationClick()} aria-label="Cancelar">
+              <X size={15} />
+            </button>
+          </div>
+        ) : (
+          <div className="sd-pct">
+            Asignación: {g.allocationPct.toFixed(0)}% del ahorro mensual{g.allocationManual ? "" : " (auto)"}
+            {" "}
+            <button
+              className="sd-edit-btn"
+              style={{ display: "inline-flex", verticalAlign: "middle" }}
+              onClick={() => props.onEditAllocationClick(g.id, g.allocationPct)}
+              aria-label={`Editar porcentaje asignado a ${g.title}`}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+              </svg>
+            </button>
+            {g.allocationManual && (
+              <button
+                className="sd-link-btn"
+                style={{ display: "inline-flex", padding: "0 4px", minHeight: "auto", fontSize: 11 }}
+                onClick={() => props.onResetAllocationClick(g.id)}
+                aria-label={`Volver a reparto automático para ${g.title}`}
+              >
+                deshacer
+              </button>
+            )}
+          </div>
+        )
+      )}
+
       {g.targetAmount > 0 && (
         <>
           <div className="sd-bar-track">
@@ -172,7 +229,7 @@ export default function GoalCard(props: GoalCardProps) {
           </div>
           {projection && projection.mode === "pace-only" && (
             <div className="sd-projection">
-              Estimado si destinas tu ahorro mensual aqu&iacute;: {projection.paceLabel} ({projection.paceMonths} {projection.paceMonths === 1 ? "mes" : "meses"})
+              Estimado con tu {g.allocationPct.toFixed(0)}% asignado ({props.formatSoles(allocatedMonthly)}/mes): {projection.paceLabel} ({projection.paceMonths} {projection.paceMonths === 1 ? "mes" : "meses"})
             </div>
           )}
           {projection && projection.mode === "target-date" && (

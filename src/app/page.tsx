@@ -27,7 +27,10 @@ import {
   getMonthlyRate,
   updateMonthlyRate,
 } from "@/features/goals/actions";
+import { getDebts, deleteDebt, deleteDebtPayment } from "@/features/debts/actions";
 import GoalCard from "@/components/GoalCard";
+import DebtsSection, { type DebtData } from "@/components/DebtsSection";
+import ThemeToggle from "@/components/ThemeToggle";
 import DeleteConfirmModal, { type DeleteTarget } from "@/components/DeleteConfirmModal";
 import Toast from "@/components/Toast";
 import Skeleton from "@/components/Skeleton";
@@ -50,6 +53,7 @@ interface MovementData {
 interface GoalData {
   id: string; title: string; icon: string; targetAmount: number;
   currentAmount: number; targetDate: string | null; isCompleted: boolean; createdAt: string;
+  allocationPct: number; allocationManual: boolean;
   movements: MovementData[];
 }
 
@@ -70,22 +74,25 @@ function MonthlyTooltip({ active, payload, monthlyRate }: MonthlyTooltipProps) {
   return (
     <div
       style={{
-        background: "var(--paper)",
-        border: "1px solid var(--paper-line)",
-        boxShadow: "2px 2px 0 rgba(30,42,56,0.1)",
-        padding: "8px 10px",
-        fontFamily: "'IBM Plex Mono',monospace",
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        boxShadow: "var(--shadow-sm)",
+        padding: "8px 11px",
+        fontFamily: "var(--font-mono)",
         fontSize: 12,
       }}
     >
-      <div style={{ fontWeight: 600, marginBottom: 2 }}>{row.label}</div>
-      <div style={{ color: met ? "#0F5C41" : "#A93226" }}>{formatSoles(row.total)}</div>
+      <div style={{ fontWeight: 600, marginBottom: 2, color: "var(--text)" }}>{row.label}</div>
+      <div style={{ color: met ? "var(--brand)" : "var(--negative)" }}>{formatSoles(row.total)}</div>
     </div>
   );
 }
 
 export default function SavingsLedger() {
   const [goals, setGoals] = useState<GoalData[]>([]);
+  const [debts, setDebts] = useState<DebtData[]>([]);
+  const [totalReceivable, setTotalReceivable] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [monthlyRate, setMonthlyRate] = useState(1421);
   const [currentMonthTotal, setCurrentMonthTotal] = useState(0);
@@ -96,6 +103,8 @@ export default function SavingsLedger() {
   const [amountInput, setAmountInput] = useState("");
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
   const [tempTarget, setTempTarget] = useState("");
+  const [editingAllocation, setEditingAllocation] = useState<string | null>(null);
+  const [tempAllocation, setTempAllocation] = useState("");
   const [showNewGoal, setShowNewGoal] = useState(false);
   const [newGoalName, setNewGoalName] = useState("");
   const [newGoalTarget, setNewGoalTarget] = useState("");
@@ -126,7 +135,12 @@ export default function SavingsLedger() {
   }, [errorMsg]);
 
   const loadData = useCallback(async () => {
-    const [gRes, mRes, rRes] = await Promise.all([getGoals(), getMonthlySummary(), getMonthlyRate()]);
+    const [gRes, mRes, rRes, dRes] = await Promise.all([
+      getGoals(),
+      getMonthlySummary(),
+      getMonthlyRate(),
+      getDebts(),
+    ]);
     if (gRes.success && gRes.goals) {
       setGoals(gRes.goals as GoalData[]);
       const hasMoreSeed: Record<string, boolean> = {};
@@ -163,6 +177,12 @@ export default function SavingsLedger() {
     if (rRes.success) {
       setMonthlyRate(rRes.monthlyRate ?? 1421);
     }
+    if (dRes.success && dRes.debts) {
+      setDebts(dRes.debts as DebtData[]);
+      setTotalReceivable(dRes.totalReceivable ?? 0);
+    } else if (!dRes.success) {
+      setErrorMsg(dRes.error ?? "Error al cargar las deudas");
+    }
   }, []);
 
   useEffect(() => {
@@ -172,20 +192,28 @@ export default function SavingsLedger() {
     });
   }, [loadData]);
 
+  // Prefiere el valor local si existe; si no, se queda con el que trajo loadData del server.
   useEffect(() => {
     if (!loaded) return;
     try {
       const saved = localStorage.getItem("monthlyRate");
-      if (saved) setMonthlyRate(Number(saved));
+      const n = saved !== null ? Number(saved) : NaN;
+      if (Number.isFinite(n) && n > 0) setMonthlyRate(n);
     } catch {}
   }, [loaded]);
 
-  useEffect(() => {
+  // Persiste sólo ante cambio explícito del usuario — nunca en el montaje, para no
+  // reescribir db.json en cada carga ni clobberear la tasa persistida por una carrera.
+  function handleSaveRate() {
+    const v = parseFloat(tempRate);
+    if (isNaN(v) || v <= 0) return;
+    setMonthlyRate(v);
+    setEditingRate(false);
     try {
-      localStorage.setItem("monthlyRate", String(monthlyRate));
+      localStorage.setItem("monthlyRate", String(v));
     } catch {}
-    updateMonthlyRate(monthlyRate).catch(() => {});
-  }, [monthlyRate]);
+    updateMonthlyRate(v).catch(() => {});
+  }
 
   const totalCurrentAll = goals.reduce((s, g) => s + g.currentAmount, 0);
   const targeted = goals.filter((g) => g.targetAmount > 0);
@@ -226,6 +254,28 @@ export default function SavingsLedger() {
     }
   }
 
+  async function handleSaveAllocation(id: string) {
+    const raw = parseFloat(tempAllocation);
+    if (isNaN(raw) || raw < 0 || raw > 100) return;
+    const val = Math.round(raw);
+    const res = await updateGoal(id, { allocationPct: val });
+    if (res.success) {
+      setEditingAllocation(null);
+      await loadData();
+    } else {
+      setErrorMsg(res.error ?? "Error al actualizar el porcentaje asignado");
+    }
+  }
+
+  async function handleResetAllocation(id: string) {
+    const res = await updateGoal(id, { allocationPct: null });
+    if (res.success) {
+      await loadData();
+    } else {
+      setErrorMsg(res.error ?? "Error al actualizar el porcentaje asignado");
+    }
+  }
+
   async function handleCreateGoal() {
     const name = newGoalName.trim();
     if (!name) return;
@@ -256,13 +306,29 @@ export default function SavingsLedger() {
       } else {
         setErrorMsg(res.error ?? "Error al eliminar la meta");
       }
-    } else {
+    } else if (target.kind === "movement") {
       const res = await deleteMovement(target.goalId, target.movementId);
       if (res.success) {
         setDeleteTarget(null);
         await loadData();
       } else {
         setErrorMsg(res.error ?? "Error al eliminar el movimiento");
+      }
+    } else if (target.kind === "debt") {
+      const res = await deleteDebt(target.id);
+      if (res.success) {
+        setDeleteTarget(null);
+        await loadData();
+      } else {
+        setErrorMsg(res.error ?? "Error al eliminar la deuda");
+      }
+    } else if (target.kind === "debt-payment") {
+      const res = await deleteDebtPayment(target.debtId, target.paymentId);
+      if (res.success) {
+        setDeleteTarget(null);
+        await loadData();
+      } else {
+        setErrorMsg(res.error ?? "Error al eliminar el pago");
       }
     }
   }
@@ -313,661 +379,396 @@ export default function SavingsLedger() {
   return (
     <main className="sd-root">
       <style>{`
-
         .sd-root {
-          --paper: #F0E9D6;
-          --paper-line: #C9BC9C;
-          --ink: #1E2A38;
-          --cover: #0F5C41;
-          --stamp: #A93226;
-          --gold: #8A6A24;
-          --gold-light: #FFD700;
-          font-family: 'Source Serif 4', serif;
-          color: var(--ink);
-          background: var(--paper);
-          background-image: linear-gradient(var(--paper) 39px, var(--paper-line) 40px);
-          background-size: 100% 40px;
+          --radius: 14px;
+          --radius-sm: 10px;
           min-height: 100vh;
-          padding: 0 0 48px 0;
+          padding: 0 0 64px 0;
+          font-family: var(--font-ui);
+          color: var(--text);
         }
         .sd-root * { box-sizing: border-box; }
+        .sd-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+        .sd-root button { font-family: inherit; }
         .sd-root button:focus-visible,
         .sd-root input:focus-visible {
-          outline: 2px solid var(--cover);
+          outline: 2px solid var(--brand-strong);
           outline-offset: 2px;
-        }
-        .sd-cover {
-          background: var(--cover);
-          color: var(--paper);
-          padding: clamp(20px, 5vw, 28px) clamp(18px, 5vw, 28px) 24px;
-          position: relative;
-          overflow: hidden;
-        }
-        .sd-cover::after {
-          content: "";
-          position: absolute;
-          inset: 6px;
-          border: 1px solid rgba(240,233,214,0.35);
-          pointer-events: none;
-        }
-        .sd-eyebrow {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 11px;
-          letter-spacing: 2.5px;
-          text-transform: uppercase;
-          opacity: 0.75;
-          margin: 0 0 6px;
-        }
-        .sd-title {
-          font-family: 'Special Elite', cursive;
-          font-size: clamp(22px, 5vw, 30px);
-          margin: 0 0 4px;
-          letter-spacing: 1px;
-        }
-        .sd-subtitle {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 12px;
-          opacity: 0.85;
-          margin: 0 0 20px;
-        }
-        .sd-balance-row {
-          display: flex;
-          align-items: baseline;
-          gap: 10px;
-          flex-wrap: wrap;
-        }
-        .sd-balance-label {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 11px;
-          letter-spacing: 2px;
-          text-transform: uppercase;
-          opacity: 0.75;
-        }
-        .sd-balance-amount {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: clamp(28px, 8vw, 40px);
-          font-weight: 600;
-          color: var(--gold-light);
-        }
-        .sd-progress-wrap {
-          margin-top: 16px;
-        }
-        .sd-progress-track {
-          height: 8px;
-          background: rgba(240,233,214,0.2);
-          overflow: hidden;
-        }
-        .sd-progress-fill {
-          height: 100%;
-          background: #E8C468;
-        }
-        .sd-progress-caption {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 11.5px;
-          opacity: 0.85;
-          margin-top: 8px;
-          display: flex;
-          justify-content: space-between;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-        .sd-rate-edit {
-          background: none;
-          border: none;
-          color: var(--gold-light);
-          text-decoration: underline dotted;
-          cursor: pointer;
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 11.5px;
-          padding: 4px 0;
-          min-height: 32px;
-        }
-        .sd-rate-form {
-          display: inline-flex;
-          gap: 6px;
-          align-items: center;
-        }
-        .sd-rate-form input {
-          width: 90px;
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 13px;
-          padding: 6px 6px;
-          border: 1px solid var(--paper-line);
-        }
-        .sd-monthly-card {
-          margin: 20px clamp(14px, 4vw, 28px) 0;
-          padding: 14px clamp(14px, 4vw, 20px);
-          background: var(--paper);
-          border: 1px solid var(--paper-line);
-          box-shadow: 2px 2px 0 rgba(30,42,56,0.06);
-        }
-        .sd-monthly-head {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 10px;
-        }
-        .sd-monthly-label {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 12px;
-          font-weight: 600;
-          letter-spacing: 1px;
-          text-transform: uppercase;
-          color: var(--ink);
-        }
-        .sd-monthly-sub {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 13px;
-          color: #6b6455;
-          margin-top: 2px;
-        }
-        .sd-chart-wrap {
-          margin-top: 14px;
-          height: 120px;
-        }
-        .sd-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-          gap: 20px;
-          padding: clamp(14px, 4vw, 28px);
-        }
-        .sd-card {
-          background: var(--paper);
-          border: 1px solid var(--paper-line);
-          padding: 18px 18px 16px;
-          position: relative;
-          box-shadow: 2px 2px 0 rgba(30,42,56,0.06);
-        }
-        .sd-card-head {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 8px;
-        }
-        .sd-card-name {
-          font-family: 'Special Elite', cursive;
-          font-size: 15px;
-          margin: 0 0 10px;
-          padding-right: 60px;
-          word-break: break-word;
-        }
-        .sd-card-amounts {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 20px;
-          font-weight: 600;
-          display: flex;
-          align-items: baseline;
-          gap: 4px;
-          flex-wrap: wrap;
-        }
-        .sd-card-of {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 13px;
-          font-weight: 400;
-          color: #6b6455;
-        }
-        .sd-edit-btn {
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: #6b6455;
-          padding: 6px;
-          display: inline-flex;
-          min-width: 28px;
-          min-height: 28px;
-          align-items: center;
-          justify-content: center;
-        }
-        .sd-target-form {
-          display: inline-flex;
-          gap: 6px;
-          align-items: center;
-          margin-top: 6px;
-        }
-        .sd-target-form {
-          flex-wrap: wrap;
-        }
-        .sd-target-form input {
-          width: 100px;
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 13px;
-          padding: 6px 7px;
-          border: 1px solid var(--paper-line);
-        }
-        .sd-target-form input[type="date"] {
-          width: 140px;
-        }
-        .sd-icon-btn {
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: var(--cover);
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 32px;
-          min-height: 32px;
-        }
-        .sd-bar-track {
-          height: 10px;
-          background: rgba(30,42,56,0.08);
-          margin-top: 12px;
-          overflow: hidden;
-          position: relative;
-        }
-        .sd-bar-fill {
-          height: 100%;
-          background: var(--cover);
-        }
-        .sd-bar-fill.complete { background: var(--gold); }
-        .sd-pct {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 11px;
-          color: #6b6455;
-          margin-top: 6px;
-        }
-        .sd-projection {
-          font-family: 'Source Serif 4', serif;
-          font-style: italic;
-          font-size: 12px;
-          color: #6b6455;
-          margin-top: 6px;
-        }
-        .sd-stamp {
-          position: absolute;
-          top: 10px;
-          right: 8px;
-          width: 78px;
-          height: 78px;
-          pointer-events: none;
-        }
-        .sd-stamp-ring {
-          width: 100%;
-          height: 100%;
-          border: 2.5px solid var(--stamp);
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          opacity: 0.82;
-          mix-blend-mode: multiply;
-        }
-        .sd-stamp-ring::before {
-          content: "";
-          position: absolute;
-          inset: 5px;
-          border: 1px solid var(--stamp);
-          border-radius: 50%;
-        }
-        .sd-stamp-ring span {
-          font-family: 'Special Elite', cursive;
-          font-size: 9.5px;
-          color: var(--stamp);
-          letter-spacing: 0.5px;
-          text-align: center;
-          line-height: 1.2;
-          padding: 0 6px;
-        }
-        .sd-actions {
-          margin-top: 14px;
-          display: flex;
-          gap: 6px;
-          flex-wrap: wrap;
-          align-items: center;
-        }
-        .sd-btn {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 12px;
-          background: var(--cover);
-          color: var(--paper);
-          border: none;
-          padding: 9px 14px;
-          min-height: 38px;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 5px;
-        }
-        .sd-btn-sm {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 11px;
-          background: none;
-          border: 1px solid var(--paper-line);
-          color: var(--ink);
-          padding: 6px 10px;
-          min-height: 34px;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-        }
-        .sd-link-btn {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 11.5px;
-          background: none;
-          border: none;
-          color: var(--ink);
-          cursor: pointer;
-          text-decoration: underline dotted;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          padding: 6px 2px;
-          min-height: 32px;
-        }
-        .sd-link-btn.danger { color: var(--stamp); }
-        .sd-add-form {
-          margin-top: 12px;
-          padding-top: 12px;
-          border-top: 1px dashed var(--paper-line);
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-          align-items: center;
-          overflow: hidden;
-        }
-        .sd-kind-toggle {
-          display: flex;
-          width: 100%;
-          border: 1px solid var(--paper-line);
-        }
-        .sd-kind-btn {
-          flex: 1;
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 11.5px;
-          padding: 8px 6px;
-          min-height: 36px;
-          background: transparent;
-          border: none;
-          cursor: pointer;
-          color: var(--ink);
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 5px;
-        }
-        .sd-kind-btn.active.deposit { background: var(--cover); color: var(--paper); }
-        .sd-kind-btn.active.withdrawal { background: var(--stamp); color: var(--paper); }
-        .sd-add-form input {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 14px;
-          padding: 8px 9px;
-          min-height: 38px;
-          border: 1px solid var(--paper-line);
-          background: #fff;
-        }
-        .sd-add-form input[type="number"] { width: 100%; }
-        .sd-quick-amounts { display:flex; gap:4px; flex-wrap:wrap; width:100%; }
-        .sd-qty-btn {
-          font-family:'IBM Plex Mono',monospace; font-size:11px; background:rgba(30,42,56,0.04);
-          border:1px solid var(--paper-line); padding:6px 9px; min-height:32px; cursor:pointer; color:var(--ink);
-        }
-        .sd-history {
-          margin-top: 10px;
-          border-top: 1px dashed var(--paper-line);
-          padding-top: 8px;
-          overflow: hidden;
-        }
-        .sd-history-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 8px;
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 12px;
-          padding: 5px 0;
-          color: #4a4436;
-        }
-        .sd-history-left {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          min-width: 0;
-        }
-        .sd-history-desc {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          color: #6b6455;
-        }
-        .sd-history-amt.deposit { color: var(--cover); }
-        .sd-history-amt.withdrawal { color: var(--stamp); }
-        .sd-history-empty {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 12px;
-          color: #948c78;
-          font-style: italic;
-        }
-        .sd-history-row-actions {
-          display: flex;
-          gap: 2px;
-          flex-shrink: 0;
-        }
-        .sd-history-icon-btn {
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: #948c78;
-          padding: 4px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 24px;
-          min-height: 24px;
-        }
-        .sd-movement-edit-form {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-          align-items: center;
-          padding: 6px 0;
-          width: 100%;
-        }
-        .sd-movement-edit-form input[type="number"] {
-          width: 90px;
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 12px;
-          padding: 6px 7px;
-          border: 1px solid var(--paper-line);
-        }
-        .sd-movement-edit-form input[type="text"] {
-          flex: 1;
-          min-width: 100px;
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 12px;
-          padding: 6px 7px;
-          border: 1px solid var(--paper-line);
-        }
-        .sd-movement-edit-kind {
-          display: flex;
-          border: 1px solid var(--paper-line);
-        }
-        .sd-movement-edit-kind button {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 11px;
-          padding: 6px 8px;
-          background: transparent;
-          border: none;
-          cursor: pointer;
-          color: var(--ink);
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .sd-movement-edit-kind button.active.deposit { background: var(--cover); color: var(--paper); }
-        .sd-movement-edit-kind button.active.withdrawal { background: var(--stamp); color: var(--paper); }
-        .sd-load-more-btn {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 11px;
-          background: none;
-          border: 1px dashed var(--paper-line);
-          color: var(--ink);
-          padding: 6px 10px;
-          min-height: 32px;
-          cursor: pointer;
-          width: 100%;
-          margin-top: 6px;
-        }
-        .sd-load-more-btn:disabled {
-          opacity: 0.6;
-          cursor: default;
-        }
-        .sd-projection-track {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 12px;
-          margin-top: 6px;
-          display: flex;
-          align-items: center;
-          gap: 5px;
-        }
-        .sd-projection-track.on-track { color: var(--cover); }
-        .sd-projection-track.behind { color: var(--stamp); }
-        .sd-empty-state {
-          grid-column: 1 / -1;
-          padding: 40px 20px;
-          text-align: center;
-        }
-        .sd-empty-text {
-          font-family: 'Source Serif 4', serif;
-          font-size: 16px;
-          color: #6b6455;
-          line-height: 1.6;
-          margin: 0;
-        }
-        .sd-newgoal-area {
-          border: 2px dashed var(--paper-line);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 130px;
-          background: transparent;
-          padding: 18px;
-        }
-        .sd-newgoal-form {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          width: 100%;
-        }
-        .sd-newgoal-form input {
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 14px;
-          padding: 9px 10px;
-          min-height: 38px;
-          border: 1px solid var(--paper-line);
-        }
-        .sd-newgoal-form-actions {
-          display: flex;
-          gap: 8px;
         }
 
-        @media (max-width: 600px) {
-          .sd-grid { grid-template-columns: 1fr; }
+        .sd-wrap { max-width: 1080px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 28px); }
+
+        /* Top bar */
+        .sd-topbar {
+          position: sticky;
+          top: 0;
+          z-index: 40;
+          background: color-mix(in srgb, var(--bg) 88%, transparent);
+          backdrop-filter: saturate(140%) blur(10px);
+          border-bottom: 1px solid var(--border);
         }
-        @media (max-width: 480px) {
-          .sd-monthly-head { flex-direction: column; align-items: flex-start; }
-        }
-        .sd-toast {
-          position: fixed;
-          left: 50%;
-          bottom: 20px;
-          transform: translateX(-50%);
-          background: var(--stamp);
-          color: var(--paper);
-          font-family: 'IBM Plex Mono', monospace;
-          font-size: 12.5px;
-          padding: 10px 16px;
-          box-shadow: 2px 2px 0 rgba(30,42,56,0.2);
-          z-index: 50;
-          max-width: calc(100vw - 32px);
-          border: none;
-          cursor: pointer;
+        .sd-topbar-inner {
+          max-width: 1080px;
+          margin: 0 auto;
+          padding: 12px clamp(16px, 4vw, 28px);
           display: flex;
           align-items: center;
+          justify-content: space-between;
           gap: 12px;
-          min-height: 44px;
         }
-        .sd-toast:hover {
-          background: #9d3a2f;
+        .sd-brandmark { display: flex; align-items: center; gap: 9px; }
+        .sd-brandmark-dot {
+          width: 26px; height: 26px; border-radius: 8px;
+          background: var(--brand); color: #fff;
+          display: grid; place-items: center;
+          font-family: var(--font-display); font-weight: 800; font-size: 15px;
         }
-        .sd-toast:focus-visible {
-          outline: 2px solid var(--paper);
-          outline-offset: 2px;
+        .sd-brandmark-text {
+          margin: 0;
+          font-family: var(--font-display); font-weight: 700;
+          font-size: 15px; letter-spacing: -0.01em;
         }
-        .sd-toast-text {
-          flex: 1;
+        .sd-theme-toggle {
+          width: 38px; height: 38px; border-radius: 10px;
+          border: 1px solid var(--border); background: var(--surface);
+          color: var(--text); cursor: pointer;
+          display: grid; place-items: center;
+          transition: background 0.15s ease, border-color 0.15s ease;
         }
-        .sd-toast-close {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
+        .sd-theme-toggle:hover { background: var(--surface-2); border-color: var(--muted); }
+
+        /* Hero */
+        .sd-hero {
+          margin-top: clamp(18px, 4vw, 28px);
+          border-radius: var(--radius);
+          padding: clamp(22px, 4vw, 32px);
+          background:
+            radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--brand-strong) 55%, var(--brand)) 0%, var(--brand) 55%);
+          color: #F3EFE6;
+          position: relative;
+          overflow: hidden;
+          box-shadow: var(--shadow);
         }
-        .sd-modal-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(30, 42, 56, 0.4);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 100;
+        .sd-hero-eyebrow {
+          font-family: var(--font-mono);
+          font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase;
+          opacity: 0.72; margin-bottom: 14px;
+        }
+        .sd-hero-label {
+          font-size: 12.5px; letter-spacing: 0.04em; text-transform: uppercase;
+          opacity: 0.8; font-weight: 500;
+        }
+        .sd-hero-amount {
+          font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+          font-size: clamp(34px, 9vw, 52px); font-weight: 600;
+          line-height: 1.05; margin-top: 4px; letter-spacing: -0.02em;
+          color: #FFFFFF;
+        }
+        .sd-hero-meta {
+          display: flex; flex-wrap: wrap; gap: 8px 20px;
+          margin-top: 18px; align-items: center;
+        }
+        .sd-hero-chip {
+          font-family: var(--font-mono); font-size: 12px;
+          background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
+          padding: 5px 10px; border-radius: 999px;
+        }
+        .sd-hero-progress { margin-top: 20px; }
+        .sd-hero-track {
+          height: 7px; border-radius: 999px;
+          background: rgba(255,255,255,0.18); overflow: hidden;
+        }
+        .sd-hero-fill { height: 100%; border-radius: 999px; background: var(--gold); }
+        .sd-hero-caption {
+          display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+          margin-top: 10px; font-family: var(--font-mono); font-size: 11.5px; opacity: 0.85;
+        }
+        .sd-rate-edit {
+          background: none; border: none; color: var(--gold);
+          text-decoration: underline; text-underline-offset: 2px;
+          cursor: pointer; font-family: var(--font-mono); font-size: 11.5px;
+          padding: 2px 0; min-height: 28px;
+        }
+        .sd-rate-form { display: inline-flex; gap: 6px; align-items: center; }
+        .sd-rate-form input {
+          width: 100px; font-family: var(--font-mono); font-size: 13px;
+          padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.4);
+          background: rgba(255,255,255,0.12); color: #fff;
+        }
+
+        /* Section heading */
+        .sd-section-head {
+          display: flex; align-items: baseline; justify-content: space-between;
+          gap: 12px; margin: clamp(26px, 5vw, 38px) 0 4px;
+        }
+        .sd-section-title {
+          font-family: var(--font-display); font-weight: 700;
+          font-size: clamp(18px, 3vw, 22px); letter-spacing: -0.01em;
+        }
+        .sd-section-sub {
+          font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+        }
+
+        /* Monthly card */
+        .sd-monthly-card {
+          margin-top: 14px;
+          padding: 18px clamp(16px, 3vw, 22px);
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          box-shadow: var(--shadow-sm);
+        }
+        .sd-monthly-head {
+          display: flex; justify-content: space-between; align-items: center;
+          flex-wrap: wrap; gap: 10px;
+        }
+        .sd-monthly-badge {
+          width: 40px; height: 40px; border-radius: 12px;
+          display: grid; place-items: center; font-size: 20px;
+          background: var(--brand-soft);
+        }
+        .sd-monthly-label {
+          font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
+          text-transform: uppercase; color: var(--muted);
+        }
+        .sd-monthly-sub {
+          font-family: var(--font-mono); font-size: 14px; color: var(--text);
+          margin-top: 3px; font-weight: 500;
+        }
+        .sd-monthly-sub .muted { color: var(--muted); font-weight: 400; }
+        .sd-chart-wrap { margin-top: 16px; height: 130px; }
+
+        /* Goals grid */
+        .sd-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+          gap: 18px;
+          margin-top: 14px;
+        }
+        .sd-card {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
           padding: 20px;
+          position: relative;
+          box-shadow: var(--shadow-sm);
+          transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+        }
+        .sd-card:hover { box-shadow: var(--shadow); border-color: color-mix(in srgb, var(--brand) 24%, var(--border)); }
+        .sd-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+        .sd-card-name {
+          font-family: var(--font-display); font-weight: 700; font-size: 16px;
+          margin: 0 0 12px; padding-right: 58px; word-break: break-word; letter-spacing: -0.01em;
+        }
+        .sd-card-amounts {
+          font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+          font-size: 22px; font-weight: 600; display: flex; align-items: baseline;
+          gap: 5px; flex-wrap: wrap; letter-spacing: -0.01em;
+        }
+        .sd-card-of { font-family: var(--font-mono); font-size: 13px; font-weight: 400; color: var(--muted); }
+        .sd-edit-btn {
+          background: none; border: none; cursor: pointer; color: var(--muted);
+          padding: 6px; display: inline-flex; min-width: 28px; min-height: 28px;
+          align-items: center; justify-content: center; border-radius: 8px;
+        }
+        .sd-edit-btn:hover { background: var(--surface-2); color: var(--text); }
+        .sd-target-form { display: inline-flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+        .sd-target-form input {
+          width: 110px; font-family: var(--font-mono); font-size: 13px;
+          padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border);
+          background: var(--surface-2); color: var(--text);
+        }
+        .sd-target-form input[type="date"] { width: 150px; }
+        .sd-icon-btn {
+          background: none; border: none; cursor: pointer; color: var(--brand);
+          display: inline-flex; align-items: center; justify-content: center;
+          min-width: 32px; min-height: 32px; border-radius: 8px;
+        }
+        .sd-icon-btn:hover { background: var(--brand-soft); }
+        .sd-bar-track {
+          height: 9px; border-radius: 999px;
+          background: var(--surface-2); border: 1px solid var(--border);
+          margin-top: 14px; overflow: hidden; position: relative;
+        }
+        .sd-bar-fill { height: 100%; border-radius: 999px; background: var(--brand); }
+        .sd-bar-fill.complete { background: var(--gold); }
+        .sd-pct { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+        .sd-projection { font-size: 12.5px; color: var(--muted); margin-top: 7px; }
+        .sd-projection-track { font-family: var(--font-mono); font-size: 12px; margin-top: 6px; display: flex; align-items: center; gap: 5px; }
+        .sd-projection-track.on-track { color: var(--brand); }
+        .sd-projection-track.behind { color: var(--negative); }
+
+        .sd-stamp { position: absolute; top: 14px; right: 12px; pointer-events: none; }
+        .sd-badge-complete {
+          display: inline-flex; align-items: center; gap: 5px;
+          font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+          letter-spacing: 0.06em; text-transform: uppercase;
+          color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, transparent);
+          border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+          padding: 4px 9px; border-radius: 999px;
+        }
+
+        .sd-actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .sd-btn {
+          font-family: var(--font-ui); font-size: 13px; font-weight: 500;
+          background: var(--brand); color: #fff; border: none;
+          padding: 10px 15px; min-height: 40px; border-radius: 10px; cursor: pointer;
+          display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+          transition: background 0.15s ease, transform 0.1s ease;
+        }
+        .sd-btn:hover { background: var(--brand-strong); }
+        .sd-btn:active { transform: translateY(1px); }
+        .sd-btn-sm {
+          font-family: var(--font-ui); font-size: 12px; background: var(--surface);
+          border: 1px solid var(--border); color: var(--text);
+          padding: 7px 11px; min-height: 34px; border-radius: 9px; cursor: pointer;
+          display: inline-flex; align-items: center; gap: 5px;
+        }
+        .sd-btn-sm:hover { background: var(--surface-2); }
+        .sd-link-btn {
+          font-family: var(--font-ui); font-size: 12.5px; background: none; border: none;
+          color: var(--muted); cursor: pointer; display: inline-flex; align-items: center;
+          gap: 4px; padding: 7px 6px; min-height: 34px; border-radius: 8px;
+        }
+        .sd-link-btn:hover { background: var(--surface-2); color: var(--text); }
+        .sd-link-btn.danger { color: var(--negative); }
+        .sd-link-btn.danger:hover { background: var(--negative-soft); }
+
+        .sd-add-form {
+          margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);
+          display: flex; gap: 10px; flex-wrap: wrap; align-items: center; overflow: hidden;
+        }
+        .sd-kind-toggle {
+          display: flex; width: 100%; border: 1px solid var(--border);
+          border-radius: 10px; overflow: hidden; background: var(--surface-2);
+          padding: 3px; gap: 3px;
+        }
+        .sd-kind-btn {
+          flex: 1; font-family: var(--font-ui); font-size: 12.5px; font-weight: 500;
+          padding: 8px 6px; min-height: 36px; background: transparent; border: none;
+          border-radius: 7px; cursor: pointer; color: var(--muted);
+          display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+        .sd-kind-btn.active.deposit { background: var(--brand); color: #fff; }
+        .sd-kind-btn.active.withdrawal { background: var(--negative); color: #fff; }
+        .sd-add-form input {
+          font-family: var(--font-mono); font-size: 15px; padding: 10px 11px; min-height: 40px;
+          border: 1px solid var(--border); border-radius: 10px;
+          background: var(--surface-2); color: var(--text);
+        }
+        .sd-add-form input[type="number"] { width: 100%; }
+        .sd-quick-amounts { display:flex; gap:6px; flex-wrap:wrap; width:100%; }
+        .sd-qty-btn {
+          font-family: var(--font-mono); font-size: 12px; background: var(--surface-2);
+          border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px;
+          min-height: 32px; cursor: pointer; color: var(--text);
+        }
+        .sd-qty-btn:hover { border-color: var(--brand); color: var(--brand); }
+
+        .sd-history { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; overflow: hidden; }
+        .sd-history-row {
+          display: flex; justify-content: space-between; align-items: center; gap: 8px;
+          font-family: var(--font-mono); font-size: 12.5px; padding: 7px 0; color: var(--text);
+          border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+        }
+        .sd-history-row:last-child { border-bottom: none; }
+        .sd-history-left { display: flex; align-items: center; gap: 7px; min-width: 0; }
+        .sd-history-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+        .sd-history-amt { font-weight: 600; }
+        .sd-history-amt.deposit { color: var(--brand); }
+        .sd-history-amt.withdrawal { color: var(--negative); }
+        .sd-history-empty { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); font-style: italic; padding: 4px 0; }
+        .sd-history-row-actions { display: flex; gap: 2px; flex-shrink: 0; }
+        .sd-history-icon-btn {
+          background: none; border: none; cursor: pointer; color: var(--muted);
+          padding: 5px; display: inline-flex; align-items: center; justify-content: center;
+          min-width: 26px; min-height: 26px; border-radius: 7px;
+        }
+        .sd-history-icon-btn:hover { background: var(--surface-2); color: var(--text); }
+        .sd-movement-edit-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 0; width: 100%; }
+        .sd-movement-edit-form input[type="number"] {
+          width: 96px; font-family: var(--font-mono); font-size: 12px; padding: 7px 8px;
+          border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+        }
+        .sd-movement-edit-form input[type="text"] {
+          flex: 1; min-width: 100px; font-family: var(--font-ui); font-size: 12.5px; padding: 7px 8px;
+          border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+        }
+        .sd-movement-edit-kind { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+        .sd-movement-edit-kind button {
+          font-family: var(--font-mono); font-size: 11px; padding: 7px 9px; background: transparent;
+          border: none; cursor: pointer; color: var(--muted); display: inline-flex; align-items: center; justify-content: center;
+        }
+        .sd-movement-edit-kind button.active.deposit { background: var(--brand); color: #fff; }
+        .sd-movement-edit-kind button.active.withdrawal { background: var(--negative); color: #fff; }
+        .sd-load-more-btn {
+          font-family: var(--font-ui); font-size: 12px; background: var(--surface-2);
+          border: 1px solid var(--border); border-radius: 9px; color: var(--muted);
+          padding: 8px 10px; min-height: 34px; cursor: pointer; width: 100%; margin-top: 8px;
+        }
+        .sd-load-more-btn:hover { color: var(--text); }
+        .sd-load-more-btn:disabled { opacity: 0.6; cursor: default; }
+
+        .sd-empty-state { grid-column: 1 / -1; padding: 44px 20px; text-align: center; }
+        .sd-empty-text { font-size: 15px; color: var(--muted); line-height: 1.6; margin: 0; }
+        .sd-newgoal-area {
+          border: 1.5px dashed var(--border); border-radius: var(--radius);
+          display: flex; align-items: center; justify-content: center;
+          min-height: 140px; background: var(--surface-2); padding: 20px;
+          transition: border-color 0.2s ease;
+        }
+        .sd-newgoal-area:hover { border-color: var(--brand); }
+        .sd-newgoal-form { display: flex; flex-direction: column; gap: 9px; width: 100%; }
+        .sd-newgoal-form input {
+          font-family: var(--font-ui); font-size: 14px; padding: 10px 11px; min-height: 40px;
+          border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text);
+        }
+        .sd-newgoal-form-actions { display: flex; gap: 8px; }
+
+        /* Toast */
+        .sd-toast {
+          position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+          background: var(--negative); color: #fff; font-size: 13px;
+          padding: 12px 16px; border-radius: 12px; box-shadow: var(--shadow);
+          z-index: 60; max-width: calc(100vw - 32px); border: none; cursor: pointer;
+          display: flex; align-items: center; gap: 12px; min-height: 46px;
+        }
+        .sd-toast:hover { filter: brightness(0.96); }
+        .sd-toast:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        .sd-toast-text { flex: 1; }
+        .sd-toast-close { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+        /* Modal */
+        .sd-modal-overlay {
+          position: fixed; inset: 0; background: rgba(10, 16, 14, 0.5);
+          display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px;
+          backdrop-filter: blur(2px);
         }
         .sd-modal {
-          background: var(--paper);
-          border: 1px solid var(--paper-line);
-          padding: 24px;
-          max-width: 340px;
-          box-shadow: 4px 4px 0 rgba(30, 42, 56, 0.15);
+          background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+          padding: 26px; max-width: 360px; box-shadow: var(--shadow);
         }
-        .sd-modal-title {
-          font-family: 'Special Elite', cursive;
-          font-size: 18px;
-          margin: 0 0 12px;
-          color: var(--stamp);
-        }
-        .sd-modal-text {
-          font-family: 'Source Serif 4', serif;
-          font-size: 14px;
-          line-height: 1.5;
-          color: var(--ink);
-          margin: 0 0 20px;
-        }
-        .sd-modal-actions {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-        .sd-modal-actions .sd-btn {
-          flex: 1;
-          min-width: 100px;
-        }
-        .sd-skeleton {
-          padding: 0 0 48px 0;
-        }
-        .sd-skeleton-cover {
-          height: 200px;
-          background: rgba(15, 92, 65, 0.1);
-          margin-bottom: 20px;
-        }
-        .sd-skeleton-card {
-          height: 140px;
-          background: rgba(15, 92, 65, 0.1);
-          margin: 20px clamp(14px, 4vw, 28px) 0;
-          border: 1px solid rgba(15, 92, 65, 0.15);
-        }
-        .sd-skeleton-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-          gap: 20px;
-          padding: clamp(14px, 4vw, 28px);
-        }
-        .sd-skeleton-card-sm {
-          height: 200px;
-          background: rgba(15, 92, 65, 0.1);
-          border: 1px solid rgba(15, 92, 65, 0.15);
+        .sd-modal-title { font-family: var(--font-display); font-weight: 700; font-size: 19px; margin: 0 0 10px; color: var(--text); }
+        .sd-modal-text { font-size: 14px; line-height: 1.55; color: var(--muted); margin: 0 0 22px; }
+        .sd-modal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .sd-modal-actions .sd-btn { flex: 1; min-width: 110px; }
+
+        /* Skeleton */
+        .sd-skeleton { padding: 0 0 64px 0; }
+        .sd-skeleton-el { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
+        .sd-skeleton-hero { height: 200px; margin-top: 20px; }
+        .sd-skeleton-card { height: 130px; margin-top: 16px; }
+        .sd-skeleton-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; margin-top: 16px; }
+        .sd-skeleton-card-sm { height: 210px; }
+        @keyframes sd-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+        .sd-skeleton-el { animation: sd-pulse 1.4s ease-in-out infinite; }
+
+        @media (max-width: 600px) { .sd-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 480px) { .sd-monthly-head { flex-direction: column; align-items: flex-start; } }
+        @media (prefers-reduced-motion: reduce) {
+          .sd-skeleton-el { animation: none; }
+          * { scroll-behavior: auto; }
         }
       `}</style>
 
@@ -979,231 +780,269 @@ export default function SavingsLedger() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      {isLoading && <Skeleton />}
-
-      <div style={{ display: isLoading ? "none" : "block" }}>
-        <motion.div
-          className="sd-cover"
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-      >
-        <p className="sd-eyebrow">Libreta de Ahorros</p>
-        <h1 className="sd-title">Mis Metas de Ahorro</h1>
-        <p className="sd-subtitle">Jeffry &middot; Lima, Per&uacute;</p>
-
-        <div className="sd-balance-row">
-          <span className="sd-balance-label">Saldo total</span>
-        </div>
-        <div className="sd-balance-amount">{formatSoles(totalCurrentAll)}</div>
-
-        <div className="sd-progress-wrap">
-          <div className="sd-progress-track">
-            <motion.div
-              className="sd-progress-fill"
-              initial={{ width: 0 }}
-              animate={{ width: overallPct + "%" }}
-              transition={{ duration: 0.7, ease: "easeOut" }}
-            />
+      <div className="sd-topbar">
+        <div className="sd-topbar-inner">
+          <div className="sd-brandmark">
+            <span className="sd-brandmark-dot">A</span>
+            <h1 className="sd-brandmark-text">Mis Metas de Ahorro</h1>
           </div>
-          <div className="sd-progress-caption">
-            <span>
-              {overallPct.toFixed(1)}% de tus metas con objetivo &middot; {formatSoles(totalCurrentTargeted)} de{" "}
-              {formatSoles(totalTarget)}
-            </span>
-            {!editingRate ? (
-              <button className="sd-rate-edit" onClick={() => { setEditingRate(true); setTempRate(String(monthlyRate)); }}>
-                ahorro mensual: {formatSoles(monthlyRate)}
-              </button>
+          <ThemeToggle />
+        </div>
+      </div>
+
+      {isLoading && <div className="sd-wrap"><Skeleton /></div>}
+
+      <div className="sd-wrap" style={{ display: isLoading ? "none" : "block" }}>
+        <motion.div
+          className="sd-hero"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <p className="sd-hero-eyebrow">Libreta de Ahorros · Jeffry · Lima, Perú</p>
+          <p className="sd-hero-label">Saldo total</p>
+          <div className="sd-hero-amount">{formatSoles(totalCurrentAll)}</div>
+
+          <div className="sd-hero-meta">
+            {totalTarget > 0 && (
+              <span className="sd-hero-chip">{overallPct.toFixed(1)}% de tus metas</span>
+            )}
+            {totalReceivable > 0 && (
+              <span className="sd-hero-chip">Por cobrar {formatSoles(totalReceivable)}</span>
+            )}
+          </div>
+
+          <div className="sd-hero-progress">
+            <div className="sd-hero-track">
+              <motion.div
+                className="sd-hero-fill"
+                initial={{ width: 0 }}
+                animate={{ width: overallPct + "%" }}
+                transition={{ duration: 0.7, ease: "easeOut" }}
+              />
+            </div>
+            <div className="sd-hero-caption">
+              <span>
+                {formatSoles(totalCurrentTargeted)} de {formatSoles(totalTarget)}
+              </span>
+              {!editingRate ? (
+                <button className="sd-rate-edit" onClick={() => { setEditingRate(true); setTempRate(String(monthlyRate)); }}>
+                  ahorro mensual: {formatSoles(monthlyRate)}
+                </button>
+              ) : (
+                <span className="sd-rate-form">
+                  <input
+                    type="number"
+                    value={tempRate}
+                    onChange={(e) => setTempRate(e.target.value)}
+                    autoFocus
+                    aria-label="Ahorro mensual estimado"
+                  />
+                  <button className="sd-icon-btn" style={{ color: "var(--gold)" }} onClick={handleSaveRate} aria-label="Guardar">
+                    <Check size={15} />
+                  </button>
+                  <button className="sd-icon-btn" style={{ color: "var(--gold)" }} onClick={() => setEditingRate(false)} aria-label="Cancelar">
+                    <X size={15} />
+                  </button>
+                </span>
+              )}
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          className="sd-monthly-card"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+        >
+          <div className="sd-monthly-head">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span className="sd-monthly-badge">{monthlyMet ? '✅' : '⏳'}</span>
+              <div>
+                <p className="sd-monthly-label">Ahorro Mensual</p>
+                <p className="sd-monthly-sub">
+                  {formatSoles(currentMonthTotal)} <span className="muted">de {formatSoles(monthlyRate)}</span>
+                  {!monthlyMet && monthRemaining > 0 && (
+                    <span className="muted"> · faltan {formatSoles(monthRemaining)}</span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {chartData.length > 0 && (
+            <div className="sd-chart-wrap" role="img" aria-label={`Gráfico de ahorros mensuales. Últimos 6 meses. Meta mensual: ${formatSoles(monthlyRate)}. Mes actual: ${formatSoles(currentMonthTotal)}`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                  <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="0" />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontFamily: "var(--font-mono)", fontSize: 11, fill: "var(--muted)" }}
+                  />
+                  <YAxis hide />
+                  <Tooltip content={<MonthlyTooltip monthlyRate={monthlyRate} />} cursor={{ fill: "var(--brand-soft)" }} />
+                  {monthlyRate > 0 && (
+                    <ReferenceLine y={monthlyRate} stroke="var(--gold)" strokeDasharray="4 4" strokeWidth={1} />
+                  )}
+                  <Bar dataKey="total" fill="var(--brand)" radius={[5, 5, 0, 0]} maxBarSize={28} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </motion.div>
+
+        <div className="sd-section-head">
+          <h2 className="sd-section-title">Metas de ahorro</h2>
+          {goals.length > 0 && <span className="sd-section-sub">{goals.length} {goals.length === 1 ? "meta" : "metas"}</span>}
+        </div>
+
+        <div className="sd-grid">
+          {goals.length === 0 && (
+            <motion.div
+              className="sd-empty-state"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <p className="sd-empty-text">
+                Aún no tienes metas creadas. Empieza por crear tu primera meta de ahorro.
+              </p>
+            </motion.div>
+          )}
+          <AnimatePresence mode="popLayout">
+            {goals.map((g, idx) => {
+              const isAdding = addingTo === g.id;
+              const isEditingTarget = editingTarget === g.id;
+              const isEditingAllocation = editingAllocation === g.id;
+              const isExpanded = !!expanded[g.id];
+
+              return (
+                <GoalCard
+                  key={g.id}
+                  goal={g}
+                  monthlyRate={monthlyRate}
+                  isAdding={isAdding}
+                  isExpanded={isExpanded}
+                  isEditingTarget={isEditingTarget}
+                  isEditingAllocation={isEditingAllocation}
+                  movementKind={movementKind}
+                  amountInput={amountInput}
+                  tempTarget={tempTarget}
+                  tempTargetDate={tempTargetDate}
+                  tempAllocation={tempAllocation}
+                  idx={idx}
+                  onAddClick={(id) => {
+                    setAddingTo(id);
+                    setAmountInput("");
+                    setMovementKind("deposit");
+                  }}
+                  onExpandClick={(id) => setExpanded((p) => ({ ...p, [id]: !p[id] }))}
+                  onDeleteClick={(id) => setDeleteTarget({ kind: "goal", id, title: g.title })}
+                  onEditTargetClick={(id, target) => {
+                    setEditingTarget(id);
+                    setTempTarget(target);
+                    setTempTargetDate(g.targetDate ? g.targetDate.slice(0, 10) : "");
+                  }}
+                  onSaveTargetClick={handleEditTarget}
+                  onCancelTargetClick={() => setEditingTarget(null)}
+                  onEditAllocationClick={(id, current) => {
+                    setEditingAllocation(id);
+                    setTempAllocation(String(current));
+                  }}
+                  onSaveAllocationClick={handleSaveAllocation}
+                  onCancelAllocationClick={() => setEditingAllocation(null)}
+                  onResetAllocationClick={handleResetAllocation}
+                  onTempAllocationChange={setTempAllocation}
+                  onMovementKindChange={setMovementKind}
+                  onAmountChange={setAmountInput}
+                  onQuickAmountClick={(amount) => setAmountInput(String(amount))}
+                  onConfirmMovement={handleAddMovement}
+                  onCancelMovement={() => setAddingTo(null)}
+                  onTempTargetChange={setTempTarget}
+                  onTempTargetDateChange={setTempTargetDate}
+                  formatSoles={formatSoles}
+                  movementHistory={{
+                    items: movementPages[g.id] ?? [],
+                    hasMore: movementHasMore[g.id] ?? false,
+                    isLoadingMore: loadingMoreFor === g.id,
+                    onLoadMore: () => handleLoadMoreMovements(g.id),
+                    editingId: editingMovement?.goalId === g.id ? editingMovement.movementId : null,
+                    editAmount: movementEditAmount,
+                    editKind: movementEditKind,
+                    editDesc: movementEditDesc,
+                    onEditClick: (movementId, current) => handleEditMovementClick(g.id, current),
+                    onEditAmountChange: setMovementEditAmount,
+                    onEditKindChange: setMovementEditKind,
+                    onEditDescChange: setMovementEditDesc,
+                    onSaveEdit: handleSaveMovementEdit,
+                    onCancelEdit: handleCancelMovementEdit,
+                    onDeleteClick: (movementId) => setDeleteTarget({ kind: "movement", goalId: g.id, movementId }),
+                  }}
+                />
+              );
+            })}
+          </AnimatePresence>
+
+          <div className="sd-newgoal-area">
+            {!showNewGoal ? (
+              <motion.button whileTap={{ scale: 0.96 }} className="sd-btn" onClick={() => setShowNewGoal(true)}>
+                <Plus size={15} /> Nueva meta
+              </motion.button>
             ) : (
-              <span className="sd-rate-form">
+              <motion.div
+                className="sd-newgoal-form"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <input
+                  type="text"
+                  placeholder="Nombre de la meta"
+                  value={newGoalName}
+                  onChange={(e) => setNewGoalName(e.target.value)}
+                  autoFocus
+                  aria-label="Nombre de la nueva meta"
+                />
                 <input
                   type="number"
-                  value={tempRate}
-                  onChange={(e) => setTempRate(e.target.value)}
-                  autoFocus
-                  aria-label="Ahorro mensual estimado"
+                  placeholder="Monto objetivo (opcional)"
+                  value={newGoalTarget}
+                  onChange={(e) => setNewGoalTarget(e.target.value)}
+                  aria-label="Monto objetivo"
                 />
-                <button className="sd-icon-btn" onClick={() => { const v = parseFloat(tempRate); if (!isNaN(v) && v > 0) { setMonthlyRate(v); setEditingRate(false); } }} aria-label="Guardar">
-                  <Check size={14} color="#E8C468" />
-                </button>
-                <button className="sd-icon-btn" onClick={() => setEditingRate(false)} aria-label="Cancelar">
-                  <X size={14} color="#E8C468" />
-                </button>
-              </span>
+                <input
+                  type="date"
+                  value={newGoalTargetDate}
+                  onChange={(e) => setNewGoalTargetDate(e.target.value)}
+                  aria-label="Fecha objetivo (opcional)"
+                />
+                <div className="sd-newgoal-form-actions">
+                  <button className="sd-btn" onClick={handleCreateGoal}>
+                    <Check size={14} /> Crear
+                  </button>
+                  <button className="sd-link-btn" onClick={() => {
+                    setShowNewGoal(false);
+                    setNewGoalTargetDate("");
+                  }}>
+                    <X size={14} /> Cancelar
+                  </button>
+                </div>
+              </motion.div>
             )}
           </div>
         </div>
-      </motion.div>
 
-      <motion.div
-        className="sd-monthly-card"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
-      >
-        <div className="sd-monthly-head">
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <span style={{fontSize:24,lineHeight:1}}>{monthlyMet ? '✅' : '⏳'}</span>
-            <div>
-              <p className="sd-monthly-label">Ahorro Mensual</p>
-              <p className="sd-monthly-sub">
-                {formatSoles(currentMonthTotal)} de {formatSoles(monthlyRate)}
-                {!monthlyMet && monthRemaining > 0 && (
-                  <span> &middot; faltan {formatSoles(monthRemaining)}</span>
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {chartData.length > 0 && (
-          <div className="sd-chart-wrap" role="img" aria-label={`Gráfico de ahorros mensuales. Últimos 6 meses. Meta mensual: ${formatSoles(monthlyRate)}. Mes actual: ${formatSoles(currentMonthTotal)}`}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <CartesianGrid vertical={false} stroke="rgba(30,42,56,0.12)" strokeDasharray="0" />
-                <XAxis
-                  dataKey="label"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontFamily: "IBM Plex Mono", fontSize: 11, fill: "#6b6455" }}
-                />
-                <YAxis hide />
-                <Tooltip content={<MonthlyTooltip monthlyRate={monthlyRate} />} cursor={{ fill: "rgba(30,42,56,0.05)" }} />
-                {monthlyRate > 0 && (
-                  <ReferenceLine y={monthlyRate} stroke="#8A6A24" strokeDasharray="4 4" strokeWidth={1} />
-                )}
-                <Bar dataKey="total" fill="#0F5C41" radius={[4, 4, 0, 0]} maxBarSize={24} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </motion.div>
-
-      <div className="sd-grid">
-        {goals.length === 0 && (
-          <motion.div
-            className="sd-empty-state"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <p className="sd-empty-text">
-              Aún no tienes metas creadas. Empieza por crear tu primera meta de ahorro.
-            </p>
-          </motion.div>
-        )}
-        <AnimatePresence mode="popLayout">
-          {goals.map((g, idx) => {
-            const isAdding = addingTo === g.id;
-            const isEditingTarget = editingTarget === g.id;
-            const isExpanded = !!expanded[g.id];
-
-            return (
-              <GoalCard
-                key={g.id}
-                goal={g}
-                monthlyRate={monthlyRate}
-                isAdding={isAdding}
-                isExpanded={isExpanded}
-                isEditingTarget={isEditingTarget}
-                movementKind={movementKind}
-                amountInput={amountInput}
-                tempTarget={tempTarget}
-                tempTargetDate={tempTargetDate}
-                idx={idx}
-                onAddClick={(id) => {
-                  setAddingTo(id);
-                  setAmountInput("");
-                  setMovementKind("deposit");
-                }}
-                onExpandClick={(id) => setExpanded((p) => ({ ...p, [id]: !p[id] }))}
-                onDeleteClick={(id) => setDeleteTarget({ kind: "goal", id, title: g.title })}
-                onEditTargetClick={(id, target) => {
-                  setEditingTarget(id);
-                  setTempTarget(target);
-                  setTempTargetDate(g.targetDate ? g.targetDate.slice(0, 10) : "");
-                }}
-                onSaveTargetClick={handleEditTarget}
-                onCancelTargetClick={() => setEditingTarget(null)}
-                onMovementKindChange={setMovementKind}
-                onAmountChange={setAmountInput}
-                onQuickAmountClick={(amount) => setAmountInput(String(amount))}
-                onConfirmMovement={handleAddMovement}
-                onCancelMovement={() => setAddingTo(null)}
-                onTempTargetChange={setTempTarget}
-                onTempTargetDateChange={setTempTargetDate}
-                formatSoles={formatSoles}
-                movementHistory={{
-                  items: movementPages[g.id] ?? [],
-                  hasMore: movementHasMore[g.id] ?? false,
-                  isLoadingMore: loadingMoreFor === g.id,
-                  onLoadMore: () => handleLoadMoreMovements(g.id),
-                  editingId: editingMovement?.goalId === g.id ? editingMovement.movementId : null,
-                  editAmount: movementEditAmount,
-                  editKind: movementEditKind,
-                  editDesc: movementEditDesc,
-                  onEditClick: (movementId, current) => handleEditMovementClick(g.id, current),
-                  onEditAmountChange: setMovementEditAmount,
-                  onEditKindChange: setMovementEditKind,
-                  onEditDescChange: setMovementEditDesc,
-                  onSaveEdit: handleSaveMovementEdit,
-                  onCancelEdit: handleCancelMovementEdit,
-                  onDeleteClick: (movementId) => setDeleteTarget({ kind: "movement", goalId: g.id, movementId }),
-                }}
-              />
-            );
-          })}
-        </AnimatePresence>
-
-        <div className="sd-newgoal-area">
-          {!showNewGoal ? (
-            <motion.button whileTap={{ scale: 0.96 }} className="sd-btn" onClick={() => setShowNewGoal(true)}>
-              <Plus size={14} /> Nueva meta
-            </motion.button>
-          ) : (
-            <motion.div
-              className="sd-newgoal-form"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <input
-                type="text"
-                placeholder="Nombre de la meta"
-                value={newGoalName}
-                onChange={(e) => setNewGoalName(e.target.value)}
-                autoFocus
-                aria-label="Nombre de la nueva meta"
-              />
-              <input
-                type="number"
-                placeholder="Monto objetivo (opcional)"
-                value={newGoalTarget}
-                onChange={(e) => setNewGoalTarget(e.target.value)}
-                aria-label="Monto objetivo"
-              />
-              <input
-                type="date"
-                value={newGoalTargetDate}
-                onChange={(e) => setNewGoalTargetDate(e.target.value)}
-                aria-label="Fecha objetivo (opcional)"
-              />
-              <div className="sd-newgoal-form-actions">
-                <button className="sd-btn" onClick={handleCreateGoal}>
-                  <Check size={13} /> Crear
-                </button>
-                <button className="sd-link-btn" onClick={() => {
-                  setShowNewGoal(false);
-                  setNewGoalTargetDate("");
-                }}>
-                  <X size={13} /> Cancelar
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </div>
-      </div>
+        <DebtsSection
+          debts={debts}
+          totalReceivable={totalReceivable}
+          formatSoles={formatSoles}
+          onChanged={loadData}
+          onError={setErrorMsg}
+          onRequestDelete={setDeleteTarget}
+        />
       </div>
     </main>
   );

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Next.js 15 App Router app for tracking personal savings goals ("Mis Metas de Ahorro"). Single user, in Spanish (es-PE), no auth. Originally a Claude Artifact, migrated to a standalone deployable app (Docker on Railway).
+Next.js 15 App Router app for tracking personal savings goals ("Mis Metas de Ahorro"), plus a secondary, informational debts-owed-to-you tracker. Single user, in Spanish (es-PE), no auth. Originally a Claude Artifact, migrated to a standalone deployable app (Docker on Railway).
 
 ## Commands
 
@@ -32,13 +32,16 @@ Always `docker compose down` before rebuilding — an old container left running
 
 **No database, no Prisma.** Data lives in a single JSON file, not SQL. This was a deliberate simplification (see git history / conversation context) — the data model is 2 entities and low write volume, so a DB was overkill for a personal-use app deployed on Railway.
 
-- `src/lib/db/store.ts` — the entire persistence layer. Reads/writes `data/db.json` (path from `DATA_DIR` env var, defaults to `<cwd>/data`). All goals and their movements live in one JSON blob (`{ goals: Goal[] }`, `Movement[]` nested inside each `Goal`).
+- `src/lib/db/store.ts` — the entire persistence layer. Reads/writes `data/db.json` (path from `DATA_DIR` env var, defaults to `<cwd>/data`). Goals, their movements, and debts all live in one JSON blob (`{ goals: Goal[], debts: Debt[], monthlyRate: number }`, `Movement[]` nested per `Goal`, `DebtPayment[]` nested per `Debt`).
   - Writes are serialized through an in-process promise queue (`withDb`) to avoid concurrent read-modify-write races — this only works because it's a single Node process (no horizontal scaling).
-  - `readOnly()` skips the write queue for pure reads (`getGoals`, `getMonthlySummary`).
+  - `readOnly()` skips the write queue for pure reads (`getGoals`, `getMonthlySummary`, `getDebts`).
   - Every write does read-modify-write of the whole file (write to `.tmp` then atomic `rename`). Fine at this data scale; would need rethinking if movement history grows into the thousands.
-- `src/features/goals/actions.ts` — all data mutations/queries as Next.js Server Actions (`"use server"`). This is the only interface `src/app/page.tsx` talks to — there are no API routes. Validates input with `zod`, returns `{ success, error? }` / `{ success, data? }` shapes (never throws to the caller).
+  - `readDb()` defaults missing fields (`debts: parsed.debts ?? []`) so older `db.json` files without the debts field still load — keep this pattern for any future field additions.
+- `src/features/goals/actions.ts` — all goal/movement mutations/queries as Next.js Server Actions (`"use server"`).
+- `src/features/debts/actions.ts` — debts are a separate, informational feature: money owed *to* the user by other people. Same server-action pattern as goals (`zod` validation, `{ success, error? }` shapes, `revalidatePath("/")`). Deliberately **not** wired into goals/savings math — `getDebts()` returns each debt's `outstanding` amount plus a `totalReceivable`, but nothing here writes to `Goal.currentAmount` or the overall balance. If debts ever need to feed into a goal (e.g. "apply this payment as a deposit"), that's a deliberate future integration, not an oversight.
+- Together, `goals/actions.ts` and `debts/actions.ts` are the only interface `src/app/page.tsx` talks to — there are no API routes.
 - `src/app/page.tsx` — single-page client component (`"use client"`) holding all UI state. Calls the server actions directly, re-fetches via `loadData()` after every mutation (no optimistic updates, no cache invalidation beyond `revalidatePath("/")` in the actions).
-- `monthlyRate` (the user's monthly savings target) is **client-only state in `localStorage`**, not persisted server-side — it's not part of the JSON store.
+- `monthlyRate` (the user's monthly savings target) is persisted in **two places**: `localStorage` (per-device, the primary source — preferred over the server value on load) and the JSON store (`DbShape.monthlyRate`, a cross-device backup). It is written to both **only on an explicit user change** (the rate-edit save handler in `page.tsx`), never on mount — writing it on every mount would rewrite the whole `db.json` each page load and could clobber the persisted value via a read/write race with `getMonthlyRate`.
 
 ### Docker / deployment
 
@@ -59,7 +62,9 @@ Always `docker compose down` before rebuilding — an old container left running
 
 ## UI conventions
 
-- Vintage "savings passbook" visual theme — all styling is a single scoped `<style>` block inside `page.tsx` (`.sd-*` class prefix) plus a bit of Tailwind in `globals.css`/`layout.tsx`. Not a component library; don't introduce one without discussing.
-- Animations via `framer-motion` (card enter/exit, expand-collapse, progress bars, the "Completado" stamp). Monthly trend chart via `recharts`.
-- Currency formatting is hardcoded to Peruvian soles (`formatSoles` in `page.tsx`, `formatCurrency` in `src/lib/utils.ts` — both do `"S/ " + Math.round(n).toLocaleString("es-PE")`, currently duplicated).
+- Modern fintech visual theme (light + dark) — a "reimagined ledger" look, not the old vintage passbook. Styling is CSS custom properties defined in `globals.css` (`:root` for light, `:root[data-theme="dark"]` override, `@media (prefers-color-scheme: dark)` as the unset default), consumed via `var(--token)` throughout scoped `<style>` blocks in `page.tsx` (`.sd-*` prefix) and `DebtsSection.tsx` (`.dbt-*` prefix). Not a component library; don't introduce one without discussing.
+  - Theme is set as `data-theme="light"|"dark"` on `<html>`, chosen by `ThemeToggle.tsx`, persisted to `localStorage("theme")`. A pre-hydration inline script in `layout.tsx` (`themeScript`) sets the attribute before paint to avoid a flash — if you touch theme init, keep that script in sync with `ThemeToggle`'s logic.
+  - Fonts (`next/font/google` in `layout.tsx`): **Bricolage Grotesque** for display/headings, **Inter** for UI/body, **IBM Plex Mono** for all money amounts (tabular figures — deliberate, reads as financial data).
+- Animations via `framer-motion` (card enter/exit, expand-collapse, progress bars, the "Completado" badge). Monthly trend chart via `recharts`, recolored from CSS tokens.
+- Currency formatting is hardcoded to Peruvian soles via `formatSoles` in `page.tsx` (`"S/ " + Math.round(n).toLocaleString("es-PE")`), passed down as a prop to `GoalCard` and `DebtsSection`. There is no `src/lib/utils.ts` — don't reintroduce a second formatter there.
 - Favicon is `src/app/icon.svg` (Next.js App Router file convention — no `public/` directory in this project).

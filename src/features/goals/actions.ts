@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { withDb, readOnly, newId, type Movement, type MovementType } from "@/lib/db/store";
+import { withDb, readOnly, newId, type Movement, type MovementType, type Goal } from "@/lib/db/store";
 
 export type { MovementType };
 
@@ -34,6 +34,43 @@ function computeIsCompleted(currentAmount: number, targetAmount: number): boolea
   return targetAmount > 0 && (currentAmount >= targetAmount || Math.abs(currentAmount - targetAmount) < 0.001);
 }
 
+function isActiveForAllocation(g: Goal): boolean {
+  return g.targetAmount > 0 && !g.isCompleted;
+}
+
+// Reparte `total` (entero) entre `count` casillas en enteros lo más parejo posible,
+// sumando siempre exactamente `total` — método de mayor resto, sin decimales.
+function splitIntegerEvenly(total: number, count: number): number[] {
+  if (count <= 0) return [];
+  const base = Math.floor(total / count);
+  const remainder = total - base * count;
+  return Array.from({ length: count }, (_, i) => base + (i < remainder ? 1 : 0));
+}
+
+// Reparte el ahorro mensual entre metas activas: las que tienen % manual lo conservan;
+// el resto (100 - suma de manuales) se divide en enteros lo más parejo posible entre las que no lo tienen.
+function computeAllocations(goals: Goal[]): Map<string, { pct: number; manual: boolean }> {
+  const active = goals.filter(isActiveForAllocation);
+  const manualActive = active.filter((g) => g.allocationPct !== null);
+  const sumManual = manualActive.reduce((s, g) => s + (g.allocationPct ?? 0), 0);
+  const autoActive = active.filter((g) => g.allocationPct === null);
+  const remainingPct = Math.max(0, 100 - sumManual);
+  const autoSplit = splitIntegerEvenly(remainingPct, autoActive.length);
+
+  const map = new Map<string, { pct: number; manual: boolean }>();
+  let autoIdx = 0;
+  for (const g of goals) {
+    if (!isActiveForAllocation(g)) {
+      map.set(g.id, { pct: 0, manual: g.allocationPct !== null });
+      continue;
+    }
+    map.set(g.id, g.allocationPct !== null
+      ? { pct: g.allocationPct, manual: true }
+      : { pct: autoSplit[autoIdx++], manual: false });
+  }
+  return map;
+}
+
 export async function createGoal(data: {
   title: string;
   icon?: string;
@@ -55,6 +92,7 @@ export async function createGoal(data: {
         isCompleted: false,
         createdAt: new Date().toISOString(),
         movements: [] as Movement[],
+        allocationPct: null,
       };
       db.goals.unshift(g);
       return g;
@@ -76,11 +114,29 @@ export async function updateGoal(id: string, data: {
   description?: string;
   targetAmount?: number;
   targetDate?: string | null;
+  allocationPct?: number | null;
 }) {
   try {
-    const goal = await withDb((db) => {
+    const result = await withDb((db) => {
       const g = db.goals.find((x) => x.id === id);
-      if (!g) return null;
+      if (!g) return { error: "Meta no encontrada" as const };
+
+      if (data.allocationPct !== undefined) {
+        if (data.allocationPct !== null) {
+          // Enteros únicamente: así el resto se reparte siempre en enteros exactos, sin decimales.
+          if (!Number.isInteger(data.allocationPct) || data.allocationPct < 0 || data.allocationPct > 100) {
+            return { error: "El porcentaje debe ser un entero entre 0 y 100" as const };
+          }
+          const sumOthers = db.goals
+            .filter((x) => x.id !== id && isActiveForAllocation(x) && x.allocationPct !== null)
+            .reduce((s, x) => s + (x.allocationPct ?? 0), 0);
+          if (sumOthers + data.allocationPct > 100) {
+            return { error: "La suma de porcentajes asignados no puede superar 100%" as const };
+          }
+        }
+        g.allocationPct = data.allocationPct;
+      }
+
       if (data.title !== undefined) g.title = data.title;
       if (data.icon !== undefined) g.icon = data.icon;
       if (data.description !== undefined) g.description = data.description;
@@ -88,11 +144,12 @@ export async function updateGoal(id: string, data: {
       if (data.targetDate !== undefined) {
         g.targetDate = data.targetDate ? new Date(data.targetDate + "T12:00:00").toISOString() : null;
       }
-      return g;
+      g.isCompleted = computeIsCompleted(round2(g.currentAmount), round2(g.targetAmount));
+      return { goal: g };
     });
-    if (!goal) return { success: false, error: "Meta no encontrada" };
+    if ("error" in result) return { success: false, error: result.error };
     revalidatePath("/");
-    return { success: true, goal };
+    return { success: true, goal: result.goal };
   } catch (error) {
     console.error("Error updating goal:", error);
     return { success: false, error: "Error al actualizar la meta" };
@@ -292,6 +349,7 @@ export async function getMovements(goalId: string, offset: number, limit: number
 export async function getGoals() {
   try {
     const db = await readOnly();
+    const allocations = computeAllocations(db.goals);
     const goalsPlain = [...db.goals]
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
       .map((g) => ({
@@ -304,6 +362,8 @@ export async function getGoals() {
         targetDate: g.targetDate,
         isCompleted: g.isCompleted,
         createdAt: g.createdAt,
+        allocationPct: allocations.get(g.id)?.pct ?? 0,
+        allocationManual: allocations.get(g.id)?.manual ?? false,
         movements: g.movements
           .slice()
           .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -332,6 +392,7 @@ export async function getGoalById(id: string) {
       return { success: false, error: "Meta no encontrada" };
     }
 
+    const allocation = computeAllocations(db.goals).get(goal.id);
     const goalPlain = {
       id: goal.id,
       title: goal.title,
@@ -342,6 +403,8 @@ export async function getGoalById(id: string) {
       targetDate: goal.targetDate,
       isCompleted: goal.isCompleted,
       createdAt: goal.createdAt,
+      allocationPct: allocation?.pct ?? 0,
+      allocationManual: allocation?.manual ?? false,
       movements: goal.movements
         .slice()
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -364,27 +427,36 @@ export async function getGoalById(id: string) {
 export async function getMonthlySummary() {
   try {
     const db = await readOnly();
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-    const allMovements = db.goals.flatMap((g) =>
-      g.movements.filter((m) => m.type === "deposit").map((m) => ({ ...m, date: new Date(m.createdAt) }))
+    // Los movimientos se guardan en UTC pero el usuario es de Lima (UTC-5, sin DST).
+    // Agrupamos por mes calendario de Lima para no misatribuir depósitos cerca del
+    // límite de mes cuando el servidor corre en UTC.
+    const LIMA_OFFSET_MS = 5 * 60 * 60 * 1000;
+    const ymKey = (iso: string) => {
+      const l = new Date(new Date(iso).getTime() - LIMA_OFFSET_MS);
+      return l.getUTCFullYear() * 12 + l.getUTCMonth();
+    };
+
+    const deposits = db.goals.flatMap((g) =>
+      g.movements
+        .filter((m) => m.type === "deposit")
+        .map((m) => ({ amount: m.amount, key: ymKey(m.createdAt) }))
     );
 
-    const currentMonth = allMovements
-      .filter((m) => m.date >= startOfMonth && m.date < startOfNextMonth)
+    const nowLima = new Date(Date.now() - LIMA_OFFSET_MS);
+    const curKey = nowLima.getUTCFullYear() * 12 + nowLima.getUTCMonth();
+
+    const currentMonth = deposits
+      .filter((m) => m.key === curKey)
       .reduce((sum, m) => sum + m.amount, 0);
 
     const months: { year: number; month: number; total: number }[] = [];
     for (let i = 0; i < 6; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const start = new Date(d.getFullYear(), d.getMonth(), 1);
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-      const total = allMovements
-        .filter((m) => m.date >= start && m.date < end)
+      const key = curKey - i;
+      const total = deposits
+        .filter((m) => m.key === key)
         .reduce((sum, m) => sum + m.amount, 0);
-      months.push({ year: d.getFullYear(), month: d.getMonth(), total: round2(total) });
+      months.push({ year: Math.floor(key / 12), month: key % 12, total: round2(total) });
     }
 
     return {
@@ -403,7 +475,8 @@ export async function updateGoalTarget(id: string, targetAmount: number) {
     const goal = await withDb((db) => {
       const g = db.goals.find((x) => x.id === id);
       if (!g) return null;
-      g.targetAmount = targetAmount;
+      g.targetAmount = round2(targetAmount);
+      g.isCompleted = computeIsCompleted(round2(g.currentAmount), g.targetAmount);
       return g;
     });
     if (!goal) return { success: false, error: "Meta no encontrada" };

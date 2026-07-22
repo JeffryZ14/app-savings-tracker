@@ -1,23 +1,26 @@
 import type { Metadata } from "next";
-import { Special_Elite, Source_Serif_4, IBM_Plex_Mono } from "next/font/google";
+import { Bricolage_Grotesque, Inter, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
-const specialElite = Special_Elite({
-  weight: "400",
+const bricolage = Bricolage_Grotesque({
+  weight: ["600", "700", "800"],
   subsets: ["latin"],
   display: "swap",
+  variable: "--font-display",
 });
 
-const sourceSerif = Source_Serif_4({
-  weight: ["400", "600"],
+const inter = Inter({
+  weight: ["400", "500", "600"],
   subsets: ["latin"],
   display: "swap",
+  variable: "--font-ui",
 });
 
 const ibmPlexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
   subsets: ["latin"],
   display: "swap",
+  variable: "--font-mono",
 });
 
 export const metadata: Metadata = {
@@ -25,16 +28,20 @@ export const metadata: Metadata = {
   description: "Gestiona tus metas de ahorro con facilidad",
 };
 
+// Fija el tema antes de pintar para evitar el flash claro/oscuro.
+const themeScript = `(function(){try{var t=localStorage.getItem("theme");if(!t){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
-      <body className="min-h-screen bg-slate-50 font-sans text-slate-900 antialiased">
-        {children}
-      </body>
+    <html lang="es" className={`${bricolage.variable} ${inter.variable} ${ibmPlexMono.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
+      <body>{children}</body>
     </html>
   );
 }

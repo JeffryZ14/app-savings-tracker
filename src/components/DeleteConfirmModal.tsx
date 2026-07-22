@@ -5,7 +5,9 @@ import { Check, X } from "lucide-react";
 
 export type DeleteTarget =
   | { kind: "goal"; id: string; title: string }
-  | { kind: "movement"; goalId: string; movementId: string };
+  | { kind: "movement"; goalId: string; movementId: string }
+  | { kind: "debt"; id: string; person: string }
+  | { kind: "debt-payment"; debtId: string; paymentId: string };
 
 interface DeleteConfirmModalProps {
   target: DeleteTarget | null;
@@ -21,6 +23,14 @@ const COPY: Record<DeleteTarget["kind"], { title: string; text: string }> = {
   movement: {
     title: "¿Eliminar movimiento?",
     text: "Se eliminará este movimiento y se recalculará el saldo de la meta. Esta acción no se puede deshacer.",
+  },
+  debt: {
+    title: "¿Eliminar deuda?",
+    text: "Se eliminará el registro de esta deuda y todos sus pagos. Esta acción no se puede deshacer.",
+  },
+  "debt-payment": {
+    title: "¿Eliminar pago?",
+    text: "Se eliminará este pago y volverá a sumarse al monto pendiente por cobrar. Esta acción no se puede deshacer.",
   },
 };
 
