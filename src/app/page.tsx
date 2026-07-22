@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { Plus, X, Check } from "lucide-react";
 
+import "./savings.css";
 import {
   getGoals,
   createGoal,
@@ -42,6 +43,8 @@ function formatSoles(n: number) {
 }
 
 const MONTH_LABELS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+type MovementKind = "deposit" | "withdrawal";
 
 interface MovementData {
   id: string;
@@ -99,30 +102,38 @@ export default function SavingsLedger() {
   const [currentMonthTotal, setCurrentMonthTotal] = useState(0);
   const [monthHistory, setMonthHistory] = useState<MonthRow[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [addingTo, setAddingTo] = useState<string | null>(null);
-  const [movementKind, setMovementKind] = useState<"deposit" | "withdrawal">("deposit");
-  const [amountInput, setAmountInput] = useState("");
-  const [editingTarget, setEditingTarget] = useState<string | null>(null);
-  const [tempTarget, setTempTarget] = useState("");
-  const [editingAllocation, setEditingAllocation] = useState<string | null>(null);
-  const [tempAllocation, setTempAllocation] = useState("");
+  // Formularios transitorios de edición, agrupados uno por formulario (antes eran
+  // ~19 useState sueltos). Cada objeto reúne los campos que siempre cambian juntos.
+  //
+  // "Agregar movimiento" a una meta (goalId = meta abierta, o null si ninguna).
+  const [addForm, setAddForm] = useState<{ goalId: string | null; kind: MovementKind; amount: string }>({
+    goalId: null, kind: "deposit", amount: "",
+  });
+  // Edición del monto/fecha objetivo de una meta (id = meta en edición, o null).
+  const [targetEdit, setTargetEdit] = useState<{ id: string | null; amount: string; date: string }>({
+    id: null, amount: "", date: "",
+  });
+  // Edición del % de asignación mensual de una meta.
+  const [allocEdit, setAllocEdit] = useState<{ id: string | null; value: string }>({
+    id: null, value: "",
+  });
+  // Edición del ahorro mensual estimado (rate) en el hero.
+  const [rateEdit, setRateEdit] = useState<{ editing: boolean; value: string }>({
+    editing: false, value: "",
+  });
+  // Formulario "nueva meta".
+  const [newGoal, setNewGoal] = useState<{ show: boolean; name: string; target: string; date: string; initial: string }>({
+    show: false, name: "", target: "", date: "", initial: "",
+  });
+  // Edición de un movimiento ya registrado (null = ninguno en edición).
+  const [movementEdit, setMovementEdit] = useState<
+    { goalId: string; movementId: string; amount: string; kind: MovementKind; desc: string } | null
+  >(null);
   // Simulación "¿y si me pagan esta deuda?" — solo visual, nunca se persiste ni cambia currentAmount real.
   const [simulation, setSimulation] = useState<{ debtId: string; goalId: string } | null>(null);
-  const [showNewGoal, setShowNewGoal] = useState(false);
-  const [newGoalName, setNewGoalName] = useState("");
-  const [newGoalTarget, setNewGoalTarget] = useState("");
-  const [editingRate, setEditingRate] = useState(false);
-  const [tempRate, setTempRate] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [newGoalTargetDate, setNewGoalTargetDate] = useState("");
-  const [newGoalInitial, setNewGoalInitial] = useState("");
-  const [tempTargetDate, setTempTargetDate] = useState("");
-  const [editingMovement, setEditingMovement] = useState<{ goalId: string; movementId: string } | null>(null);
-  const [movementEditAmount, setMovementEditAmount] = useState("");
-  const [movementEditKind, setMovementEditKind] = useState<"deposit" | "withdrawal">("deposit");
-  const [movementEditDesc, setMovementEditDesc] = useState("");
   const [movementPages, setMovementPages] = useState<Record<string, MovementData[]>>({});
   const [movementHasMore, setMovementHasMore] = useState<Record<string, boolean>>({});
   const [loadingMoreFor, setLoadingMoreFor] = useState<string | null>(null);
@@ -209,10 +220,10 @@ export default function SavingsLedger() {
   // Persiste sólo ante cambio explícito del usuario — nunca en el montaje, para no
   // reescribir db.json en cada carga ni clobberear la tasa persistida por una carrera.
   function handleSaveRate() {
-    const v = parseFloat(tempRate);
+    const v = parseFloat(rateEdit.value);
     if (isNaN(v) || v <= 0) return;
     setMonthlyRate(v);
-    setEditingRate(false);
+    setRateEdit((s) => ({ ...s, editing: false }));
     try {
       localStorage.setItem("monthlyRate", String(v));
     } catch {}
@@ -265,12 +276,11 @@ export default function SavingsLedger() {
     .map((m) => ({ ...m, label: MONTH_LABELS[m.month] }));
 
   async function handleAddMovement(id: string) {
-    const amt = parseFloat(amountInput);
+    const amt = parseFloat(addForm.amount);
     if (!amt || amt <= 0) return;
-    const res = await addMovement(id, { amount: amt, type: movementKind });
+    const res = await addMovement(id, { amount: amt, type: addForm.kind });
     if (res.success) {
-      setAmountInput("");
-      setAddingTo(null);
+      setAddForm((s) => ({ ...s, goalId: null, amount: "" }));
       await loadData();
     } else {
       setErrorMsg(res.error ?? "Error al registrar el movimiento");
@@ -278,12 +288,11 @@ export default function SavingsLedger() {
   }
 
   async function handleEditTarget(id: string) {
-    const val = parseFloat(tempTarget);
+    const val = parseFloat(targetEdit.amount);
     if (isNaN(val) || val < 0) return;
-    const res = await updateGoal(id, { targetAmount: val, targetDate: tempTargetDate || null });
+    const res = await updateGoal(id, { targetAmount: val, targetDate: targetEdit.date || null });
     if (res.success) {
-      setEditingTarget(null);
-      setTempTargetDate("");
+      setTargetEdit((s) => ({ ...s, id: null, date: "" }));
       await loadData();
     } else {
       setErrorMsg(res.error ?? "Error al actualizar el objetivo");
@@ -291,12 +300,12 @@ export default function SavingsLedger() {
   }
 
   async function handleSaveAllocation(id: string) {
-    const raw = parseFloat(tempAllocation);
+    const raw = parseFloat(allocEdit.value);
     if (isNaN(raw) || raw < 0 || raw > 100) return;
     const val = Math.round(raw);
     const res = await updateGoal(id, { allocationPct: val });
     if (res.success) {
-      setEditingAllocation(null);
+      setAllocEdit((s) => ({ ...s, id: null }));
       await loadData();
     } else {
       setErrorMsg(res.error ?? "Error al actualizar el porcentaje asignado");
@@ -313,23 +322,19 @@ export default function SavingsLedger() {
   }
 
   async function handleCreateGoal() {
-    const name = newGoalName.trim();
+    const name = newGoal.name.trim();
     if (!name) return;
-    const targetVal = parseFloat(newGoalTarget);
-    const initialVal = parseFloat(newGoalInitial);
+    const targetVal = parseFloat(newGoal.target);
+    const initialVal = parseFloat(newGoal.initial);
     const res = await createGoal({
       title: name,
       icon: "⭐",
       targetAmount: !isNaN(targetVal) && targetVal > 0 ? targetVal : 0,
-      targetDate: newGoalTargetDate || undefined,
+      targetDate: newGoal.date || undefined,
       initialAmount: !isNaN(initialVal) && initialVal > 0 ? initialVal : undefined,
     });
     if (res.success) {
-      setShowNewGoal(false);
-      setNewGoalName("");
-      setNewGoalTarget("");
-      setNewGoalTargetDate("");
-      setNewGoalInitial("");
+      setNewGoal({ show: false, name: "", target: "", date: "", initial: "" });
       await loadData();
     } else {
       setErrorMsg(res.error ?? "Error al crear la meta");
@@ -373,26 +378,27 @@ export default function SavingsLedger() {
   }
 
   function handleEditMovementClick(goalId: string, movement: MovementData) {
-    setEditingMovement({ goalId, movementId: movement.id });
-    setMovementEditAmount(String(movement.amount));
-    setMovementEditKind(movement.type);
-    setMovementEditDesc(movement.description ?? "");
+    setMovementEdit({
+      goalId,
+      movementId: movement.id,
+      amount: String(movement.amount),
+      kind: movement.type,
+      desc: movement.description ?? "",
+    });
   }
 
   function handleCancelMovementEdit() {
-    setEditingMovement(null);
-    setMovementEditAmount("");
-    setMovementEditDesc("");
+    setMovementEdit(null);
   }
 
   async function handleSaveMovementEdit() {
-    if (!editingMovement) return;
-    const amt = parseFloat(movementEditAmount);
+    if (!movementEdit) return;
+    const amt = parseFloat(movementEdit.amount);
     if (!amt || amt <= 0) return;
-    const res = await updateMovement(editingMovement.goalId, editingMovement.movementId, {
+    const res = await updateMovement(movementEdit.goalId, movementEdit.movementId, {
       amount: amt,
-      type: movementEditKind,
-      description: movementEditDesc.trim() || undefined,
+      type: movementEdit.kind,
+      description: movementEdit.desc.trim() || undefined,
     });
     if (res.success) {
       handleCancelMovementEdit();
@@ -417,428 +423,6 @@ export default function SavingsLedger() {
 
   return (
     <main className="sd-root">
-      <style>{`
-        .sd-root {
-          --radius: 14px;
-          --radius-sm: 10px;
-          min-height: 100vh;
-          padding: 0 0 64px 0;
-          font-family: var(--font-ui);
-          color: var(--text);
-        }
-        .sd-root * { box-sizing: border-box; }
-        .sd-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-        .sd-root button { font-family: inherit; }
-        .sd-root button:focus-visible,
-        .sd-root input:focus-visible {
-          outline: 2px solid var(--brand-strong);
-          outline-offset: 2px;
-        }
-
-        .sd-wrap { max-width: 1080px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 28px); }
-
-        /* Top bar */
-        .sd-topbar {
-          position: sticky;
-          top: 0;
-          z-index: 40;
-          background: color-mix(in srgb, var(--bg) 88%, transparent);
-          backdrop-filter: saturate(140%) blur(10px);
-          border-bottom: 1px solid var(--border);
-        }
-        .sd-topbar-inner {
-          max-width: 1080px;
-          margin: 0 auto;
-          padding: 12px clamp(16px, 4vw, 28px);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-        }
-        .sd-brandmark { display: flex; align-items: center; gap: 9px; }
-        .sd-brandmark-dot {
-          width: 26px; height: 26px; border-radius: 8px;
-          background: var(--brand); color: #fff;
-          display: grid; place-items: center;
-          font-family: var(--font-display); font-weight: 800; font-size: 15px;
-        }
-        .sd-brandmark-text {
-          margin: 0;
-          font-family: var(--font-display); font-weight: 700;
-          font-size: 15px; letter-spacing: -0.01em;
-        }
-        .sd-theme-toggle {
-          width: 38px; height: 38px; border-radius: 10px;
-          border: 1px solid var(--border); background: var(--surface);
-          color: var(--text); cursor: pointer;
-          display: grid; place-items: center;
-          transition: background 0.15s ease, border-color 0.15s ease;
-        }
-        .sd-theme-toggle:hover { background: var(--surface-2); border-color: var(--muted); }
-
-        /* Hero */
-        .sd-hero {
-          margin-top: clamp(18px, 4vw, 28px);
-          border-radius: var(--radius);
-          padding: clamp(22px, 4vw, 32px);
-          background:
-            radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--brand-strong) 55%, var(--brand)) 0%, var(--brand) 55%);
-          color: #F3EFE6;
-          position: relative;
-          overflow: hidden;
-          box-shadow: var(--shadow);
-        }
-        .sd-hero-eyebrow {
-          font-family: var(--font-mono);
-          font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase;
-          opacity: 0.72; margin-bottom: 14px;
-        }
-        .sd-hero-label {
-          font-size: 12.5px; letter-spacing: 0.04em; text-transform: uppercase;
-          opacity: 0.8; font-weight: 500;
-        }
-        .sd-hero-amount {
-          font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-          font-size: clamp(34px, 9vw, 52px); font-weight: 600;
-          line-height: 1.05; margin-top: 4px; letter-spacing: -0.02em;
-          color: #FFFFFF;
-        }
-        .sd-hero-meta {
-          display: flex; flex-wrap: wrap; gap: 8px 20px;
-          margin-top: 18px; align-items: center;
-        }
-        .sd-hero-chip {
-          font-family: var(--font-mono); font-size: 12px;
-          background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
-          padding: 5px 10px; border-radius: 999px;
-        }
-        .sd-hero-progress { margin-top: 20px; }
-        .sd-hero-track {
-          height: 7px; border-radius: 999px;
-          background: rgba(255,255,255,0.18); overflow: hidden;
-        }
-        .sd-hero-fill { height: 100%; border-radius: 999px; background: var(--gold); }
-        .sd-hero-caption {
-          display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
-          margin-top: 10px; font-family: var(--font-mono); font-size: 11.5px; opacity: 0.85;
-        }
-        .sd-rate-edit {
-          background: none; border: none; color: var(--gold);
-          text-decoration: underline; text-underline-offset: 2px;
-          cursor: pointer; font-family: var(--font-mono); font-size: 11.5px;
-          padding: 2px 0; min-height: 28px;
-        }
-        .sd-rate-form { display: inline-flex; gap: 6px; align-items: center; }
-        .sd-rate-form input {
-          width: 100px; font-family: var(--font-mono); font-size: 13px;
-          padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.4);
-          background: rgba(255,255,255,0.12); color: #fff;
-        }
-
-        /* Section heading */
-        .sd-section-head {
-          display: flex; align-items: baseline; justify-content: space-between;
-          gap: 12px; margin: clamp(26px, 5vw, 38px) 0 4px;
-        }
-        .sd-section-title {
-          font-family: var(--font-display); font-weight: 700;
-          font-size: clamp(18px, 3vw, 22px); letter-spacing: -0.01em;
-        }
-        .sd-section-sub {
-          font-family: var(--font-mono); font-size: 12px; color: var(--muted);
-        }
-
-        /* Monthly card */
-        .sd-monthly-card {
-          margin-top: 14px;
-          padding: 18px clamp(16px, 3vw, 22px);
-          background: var(--surface);
-          border: 1px solid var(--border);
-          border-radius: var(--radius);
-          box-shadow: var(--shadow-sm);
-        }
-        .sd-monthly-head {
-          display: flex; justify-content: space-between; align-items: center;
-          flex-wrap: wrap; gap: 10px;
-        }
-        .sd-monthly-badge {
-          width: 40px; height: 40px; border-radius: 12px;
-          display: grid; place-items: center; font-size: 20px;
-          background: var(--brand-soft);
-        }
-        .sd-monthly-label {
-          font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
-          text-transform: uppercase; color: var(--muted);
-        }
-        .sd-monthly-sub {
-          font-family: var(--font-mono); font-size: 14px; color: var(--text);
-          margin-top: 3px; font-weight: 500;
-        }
-        .sd-monthly-sub .muted { color: var(--muted); font-weight: 400; }
-        .sd-streak-chip {
-          font-family: var(--font-mono); font-size: 12px; font-weight: 500;
-          color: var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent);
-          border: 1px solid color-mix(in srgb, var(--gold) 25%, transparent);
-          padding: 5px 10px; border-radius: 999px; white-space: nowrap;
-        }
-        .sd-chart-wrap { margin-top: 16px; height: 130px; }
-
-        /* Goals grid */
-        .sd-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 18px;
-          margin-top: 14px;
-        }
-        .sd-card {
-          background: var(--surface);
-          border: 1px solid var(--border);
-          border-radius: var(--radius);
-          padding: 20px;
-          position: relative;
-          box-shadow: var(--shadow-sm);
-          transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
-        }
-        .sd-card:hover { box-shadow: var(--shadow); border-color: color-mix(in srgb, var(--brand) 24%, var(--border)); }
-        .sd-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-        .sd-card-name {
-          font-family: var(--font-display); font-weight: 700; font-size: 16px;
-          margin: 0 0 12px; padding-right: 58px; word-break: break-word; letter-spacing: -0.01em;
-        }
-        .sd-card-amounts {
-          font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-          font-size: 22px; font-weight: 600; display: flex; align-items: baseline;
-          gap: 5px; flex-wrap: wrap; letter-spacing: -0.01em;
-        }
-        .sd-card-of { font-family: var(--font-mono); font-size: 13px; font-weight: 400; color: var(--muted); }
-        .sd-edit-btn {
-          background: none; border: none; cursor: pointer; color: var(--muted);
-          padding: 6px; display: inline-flex; min-width: 28px; min-height: 28px;
-          align-items: center; justify-content: center; border-radius: 8px;
-        }
-        .sd-edit-btn:hover { background: var(--surface-2); color: var(--text); }
-        .sd-target-form { display: inline-flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-        .sd-target-form input {
-          width: 110px; font-family: var(--font-mono); font-size: 13px;
-          padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border);
-          background: var(--surface-2); color: var(--text);
-        }
-        .sd-target-form input[type="date"] { width: 150px; }
-        .sd-icon-btn {
-          background: none; border: none; cursor: pointer; color: var(--brand);
-          display: inline-flex; align-items: center; justify-content: center;
-          min-width: 32px; min-height: 32px; border-radius: 8px;
-        }
-        .sd-icon-btn:hover { background: var(--brand-soft); }
-        .sd-bar-track {
-          height: 9px; border-radius: 999px;
-          background: var(--surface-2); border: 1px solid var(--border);
-          margin-top: 14px; overflow: hidden; position: relative;
-        }
-        .sd-bar-fill { height: 100%; border-radius: 999px; background: var(--brand); }
-        .sd-bar-fill.complete { background: var(--gold); }
-        .sd-bar-fill-ghost {
-          position: absolute; top: 0; height: 100%; border-radius: 999px;
-          background: repeating-linear-gradient(
-            135deg,
-            color-mix(in srgb, var(--gold) 55%, transparent) 0 6px,
-            color-mix(in srgb, var(--gold) 30%, transparent) 6px 12px
-          );
-        }
-        .sd-pct { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin-top: 8px; }
-        .sd-alloc-warning {
-          display: flex; align-items: flex-start; gap: 5px;
-          font-family: var(--font-ui); font-size: 11.5px; color: var(--negative);
-          margin-top: 6px; line-height: 1.4;
-        }
-        .sd-alloc-warning svg { flex-shrink: 0; margin-top: 1px; }
-        .sd-projection { font-size: 12.5px; color: var(--muted); margin-top: 7px; }
-        .sd-projection-track { font-family: var(--font-mono); font-size: 12px; margin-top: 6px; display: flex; align-items: center; gap: 5px; }
-        .sd-projection-track.on-track { color: var(--brand); }
-        .sd-projection-track.behind { color: var(--negative); }
-        .sd-sim-banner {
-          display: flex; align-items: center; justify-content: space-between; gap: 8px;
-          margin-top: 8px; padding: 7px 10px; border-radius: 9px;
-          background: color-mix(in srgb, var(--gold) 12%, transparent);
-          border: 1px dashed color-mix(in srgb, var(--gold) 45%, transparent);
-          font-size: 12px; color: var(--text);
-        }
-        .sd-sim-banner.complete { font-weight: 600; }
-
-        .sd-stamp { position: absolute; top: 14px; right: 12px; pointer-events: none; }
-        .sd-badge-complete {
-          display: inline-flex; align-items: center; gap: 5px;
-          font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
-          letter-spacing: 0.06em; text-transform: uppercase;
-          color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, transparent);
-          border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
-          padding: 4px 9px; border-radius: 999px;
-        }
-
-        .sd-actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-        .sd-btn {
-          font-family: var(--font-ui); font-size: 13px; font-weight: 500;
-          background: var(--brand); color: #fff; border: none;
-          padding: 10px 15px; min-height: 40px; border-radius: 10px; cursor: pointer;
-          display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-          transition: background 0.15s ease, transform 0.1s ease;
-        }
-        .sd-btn:hover { background: var(--brand-strong); }
-        .sd-btn:active { transform: translateY(1px); }
-        .sd-btn-sm {
-          font-family: var(--font-ui); font-size: 12px; background: var(--surface);
-          border: 1px solid var(--border); color: var(--text);
-          padding: 7px 11px; min-height: 34px; border-radius: 9px; cursor: pointer;
-          display: inline-flex; align-items: center; gap: 5px;
-        }
-        .sd-btn-sm:hover { background: var(--surface-2); }
-        .sd-link-btn {
-          font-family: var(--font-ui); font-size: 12.5px; background: none; border: none;
-          color: var(--muted); cursor: pointer; display: inline-flex; align-items: center;
-          gap: 4px; padding: 7px 6px; min-height: 34px; border-radius: 8px;
-        }
-        .sd-link-btn:hover { background: var(--surface-2); color: var(--text); }
-        .sd-link-btn.danger { color: var(--negative); }
-        .sd-link-btn.danger:hover { background: var(--negative-soft); }
-
-        .sd-add-form {
-          margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);
-          display: flex; gap: 10px; flex-wrap: wrap; align-items: center; overflow: hidden;
-        }
-        .sd-kind-toggle {
-          display: flex; width: 100%; border: 1px solid var(--border);
-          border-radius: 10px; overflow: hidden; background: var(--surface-2);
-          padding: 3px; gap: 3px;
-        }
-        .sd-kind-btn {
-          flex: 1; font-family: var(--font-ui); font-size: 12.5px; font-weight: 500;
-          padding: 8px 6px; min-height: 36px; background: transparent; border: none;
-          border-radius: 7px; cursor: pointer; color: var(--muted);
-          display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-          transition: background 0.15s ease, color 0.15s ease;
-        }
-        .sd-kind-btn.active.deposit { background: var(--brand); color: #fff; }
-        .sd-kind-btn.active.withdrawal { background: var(--negative); color: #fff; }
-        .sd-add-form input {
-          font-family: var(--font-mono); font-size: 15px; padding: 10px 11px; min-height: 40px;
-          border: 1px solid var(--border); border-radius: 10px;
-          background: var(--surface-2); color: var(--text);
-        }
-        .sd-add-form input[type="number"] { width: 100%; }
-        .sd-quick-amounts { display:flex; gap:6px; flex-wrap:wrap; width:100%; }
-        .sd-qty-btn {
-          font-family: var(--font-mono); font-size: 12px; background: var(--surface-2);
-          border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px;
-          min-height: 32px; cursor: pointer; color: var(--text);
-        }
-        .sd-qty-btn:hover { border-color: var(--brand); color: var(--brand); }
-
-        .sd-history { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; overflow: hidden; }
-        .sd-history-row {
-          display: flex; justify-content: space-between; align-items: center; gap: 8px;
-          font-family: var(--font-mono); font-size: 12.5px; padding: 7px 0; color: var(--text);
-          border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-        }
-        .sd-history-row:last-child { border-bottom: none; }
-        .sd-history-left { display: flex; align-items: center; gap: 7px; min-width: 0; }
-        .sd-history-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
-        .sd-history-amt { font-weight: 600; }
-        .sd-history-amt.deposit { color: var(--brand); }
-        .sd-history-amt.withdrawal { color: var(--negative); }
-        .sd-history-empty { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); font-style: italic; padding: 4px 0; }
-        .sd-history-row-actions { display: flex; gap: 2px; flex-shrink: 0; }
-        .sd-history-icon-btn {
-          background: none; border: none; cursor: pointer; color: var(--muted);
-          padding: 5px; display: inline-flex; align-items: center; justify-content: center;
-          min-width: 26px; min-height: 26px; border-radius: 7px;
-        }
-        .sd-history-icon-btn:hover { background: var(--surface-2); color: var(--text); }
-        .sd-movement-edit-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 0; width: 100%; }
-        .sd-movement-edit-form input[type="number"] {
-          width: 96px; font-family: var(--font-mono); font-size: 12px; padding: 7px 8px;
-          border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
-        }
-        .sd-movement-edit-form input[type="text"] {
-          flex: 1; min-width: 100px; font-family: var(--font-ui); font-size: 12.5px; padding: 7px 8px;
-          border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
-        }
-        .sd-movement-edit-kind { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-        .sd-movement-edit-kind button {
-          font-family: var(--font-mono); font-size: 11px; padding: 7px 9px; background: transparent;
-          border: none; cursor: pointer; color: var(--muted); display: inline-flex; align-items: center; justify-content: center;
-        }
-        .sd-movement-edit-kind button.active.deposit { background: var(--brand); color: #fff; }
-        .sd-movement-edit-kind button.active.withdrawal { background: var(--negative); color: #fff; }
-        .sd-load-more-btn {
-          font-family: var(--font-ui); font-size: 12px; background: var(--surface-2);
-          border: 1px solid var(--border); border-radius: 9px; color: var(--muted);
-          padding: 8px 10px; min-height: 34px; cursor: pointer; width: 100%; margin-top: 8px;
-        }
-        .sd-load-more-btn:hover { color: var(--text); }
-        .sd-load-more-btn:disabled { opacity: 0.6; cursor: default; }
-
-        .sd-empty-state { grid-column: 1 / -1; padding: 44px 20px; text-align: center; }
-        .sd-empty-text { font-size: 15px; color: var(--muted); line-height: 1.6; margin: 0; }
-        .sd-newgoal-area {
-          border: 1.5px dashed var(--border); border-radius: var(--radius);
-          display: flex; align-items: center; justify-content: center;
-          min-height: 140px; background: var(--surface-2); padding: 20px;
-          transition: border-color 0.2s ease;
-        }
-        .sd-newgoal-area:hover { border-color: var(--brand); }
-        .sd-newgoal-form { display: flex; flex-direction: column; gap: 9px; width: 100%; }
-        .sd-newgoal-form input {
-          font-family: var(--font-ui); font-size: 14px; padding: 10px 11px; min-height: 40px;
-          border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text);
-        }
-        .sd-newgoal-form-actions { display: flex; gap: 8px; }
-
-        /* Toast */
-        .sd-toast {
-          position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
-          background: var(--negative); color: #fff; font-size: 13px;
-          padding: 12px 16px; border-radius: 12px; box-shadow: var(--shadow);
-          z-index: 60; max-width: calc(100vw - 32px); border: none; cursor: pointer;
-          display: flex; align-items: center; gap: 12px; min-height: 46px;
-        }
-        .sd-toast:hover { filter: brightness(0.96); }
-        .sd-toast:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-        .sd-toast-text { flex: 1; }
-        .sd-toast-close { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-
-        /* Modal */
-        .sd-modal-overlay {
-          position: fixed; inset: 0; background: rgba(10, 16, 14, 0.5);
-          display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px;
-          backdrop-filter: blur(2px);
-        }
-        .sd-modal {
-          background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-          padding: 26px; max-width: 360px; box-shadow: var(--shadow);
-        }
-        .sd-modal-title { font-family: var(--font-display); font-weight: 700; font-size: 19px; margin: 0 0 10px; color: var(--text); }
-        .sd-modal-text { font-size: 14px; line-height: 1.55; color: var(--muted); margin: 0 0 22px; }
-        .sd-modal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        .sd-modal-actions .sd-btn { flex: 1; min-width: 110px; }
-
-        /* Skeleton */
-        .sd-skeleton { padding: 0 0 64px 0; }
-        .sd-skeleton-el { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
-        .sd-skeleton-hero { height: 200px; margin-top: 20px; }
-        .sd-skeleton-card { height: 130px; margin-top: 16px; }
-        .sd-skeleton-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; margin-top: 16px; }
-        .sd-skeleton-card-sm { height: 210px; }
-        @keyframes sd-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
-        .sd-skeleton-el { animation: sd-pulse 1.4s ease-in-out infinite; }
-
-        @media (max-width: 600px) { .sd-grid { grid-template-columns: 1fr; } }
-        @media (max-width: 480px) { .sd-monthly-head { flex-direction: column; align-items: flex-start; } }
-        @media (prefers-reduced-motion: reduce) {
-          .sd-skeleton-el { animation: none; }
-          * { scroll-behavior: auto; }
-        }
-      `}</style>
-
       <Toast message={errorMsg} onClose={() => setErrorMsg(null)} />
 
       <DeleteConfirmModal
@@ -892,23 +476,23 @@ export default function SavingsLedger() {
               <span>
                 {formatSoles(totalCurrentTargeted)} de {formatSoles(totalTarget)}
               </span>
-              {!editingRate ? (
-                <button className="sd-rate-edit" onClick={() => { setEditingRate(true); setTempRate(String(monthlyRate)); }}>
+              {!rateEdit.editing ? (
+                <button className="sd-rate-edit" onClick={() => setRateEdit({ editing: true, value: String(monthlyRate) })}>
                   ahorro mensual: {formatSoles(monthlyRate)}
                 </button>
               ) : (
                 <span className="sd-rate-form">
                   <input
                     type="number"
-                    value={tempRate}
-                    onChange={(e) => setTempRate(e.target.value)}
+                    value={rateEdit.value}
+                    onChange={(e) => setRateEdit((s) => ({ ...s, value: e.target.value }))}
                     autoFocus
                     aria-label="Ahorro mensual estimado"
                   />
                   <button className="sd-icon-btn" style={{ color: "var(--gold)" }} onClick={handleSaveRate} aria-label="Guardar">
                     <Check size={15} />
                   </button>
-                  <button className="sd-icon-btn" style={{ color: "var(--gold)" }} onClick={() => setEditingRate(false)} aria-label="Cancelar">
+                  <button className="sd-icon-btn" style={{ color: "var(--gold)" }} onClick={() => setRateEdit((s) => ({ ...s, editing: false }))} aria-label="Cancelar">
                     <X size={15} />
                   </button>
                 </span>
@@ -986,9 +570,9 @@ export default function SavingsLedger() {
           )}
           <AnimatePresence mode="popLayout">
             {goals.map((g, idx) => {
-              const isAdding = addingTo === g.id;
-              const isEditingTarget = editingTarget === g.id;
-              const isEditingAllocation = editingAllocation === g.id;
+              const isAdding = addForm.goalId === g.id;
+              const isEditingTarget = targetEdit.id === g.id;
+              const isEditingAllocation = allocEdit.id === g.id;
               const isExpanded = !!expanded[g.id];
 
               return (
@@ -1000,41 +584,32 @@ export default function SavingsLedger() {
                   isExpanded={isExpanded}
                   isEditingTarget={isEditingTarget}
                   isEditingAllocation={isEditingAllocation}
-                  movementKind={movementKind}
-                  amountInput={amountInput}
-                  tempTarget={tempTarget}
-                  tempTargetDate={tempTargetDate}
-                  tempAllocation={tempAllocation}
+                  movementKind={addForm.kind}
+                  amountInput={addForm.amount}
+                  tempTarget={targetEdit.amount}
+                  tempTargetDate={targetEdit.date}
+                  tempAllocation={allocEdit.value}
                   idx={idx}
-                  onAddClick={(id) => {
-                    setAddingTo(id);
-                    setAmountInput("");
-                    setMovementKind("deposit");
-                  }}
+                  onAddClick={(id) => setAddForm({ goalId: id, kind: "deposit", amount: "" })}
                   onExpandClick={(id) => setExpanded((p) => ({ ...p, [id]: !p[id] }))}
                   onDeleteClick={(id) => setDeleteTarget({ kind: "goal", id, title: g.title })}
-                  onEditTargetClick={(id, target) => {
-                    setEditingTarget(id);
-                    setTempTarget(target);
-                    setTempTargetDate(g.targetDate ? g.targetDate.slice(0, 10) : "");
-                  }}
+                  onEditTargetClick={(id, target) =>
+                    setTargetEdit({ id, amount: target, date: g.targetDate ? g.targetDate.slice(0, 10) : "" })
+                  }
                   onSaveTargetClick={handleEditTarget}
-                  onCancelTargetClick={() => setEditingTarget(null)}
-                  onEditAllocationClick={(id, current) => {
-                    setEditingAllocation(id);
-                    setTempAllocation(String(current));
-                  }}
+                  onCancelTargetClick={() => setTargetEdit((s) => ({ ...s, id: null }))}
+                  onEditAllocationClick={(id, current) => setAllocEdit({ id, value: String(current) })}
                   onSaveAllocationClick={handleSaveAllocation}
-                  onCancelAllocationClick={() => setEditingAllocation(null)}
+                  onCancelAllocationClick={() => setAllocEdit((s) => ({ ...s, id: null }))}
                   onResetAllocationClick={handleResetAllocation}
-                  onTempAllocationChange={setTempAllocation}
-                  onMovementKindChange={setMovementKind}
-                  onAmountChange={setAmountInput}
-                  onQuickAmountClick={(amount) => setAmountInput(String(amount))}
+                  onTempAllocationChange={(v) => setAllocEdit((s) => ({ ...s, value: v }))}
+                  onMovementKindChange={(k) => setAddForm((s) => ({ ...s, kind: k }))}
+                  onAmountChange={(v) => setAddForm((s) => ({ ...s, amount: v }))}
+                  onQuickAmountClick={(amount) => setAddForm((s) => ({ ...s, amount: String(amount) }))}
                   onConfirmMovement={handleAddMovement}
-                  onCancelMovement={() => setAddingTo(null)}
-                  onTempTargetChange={setTempTarget}
-                  onTempTargetDateChange={setTempTargetDate}
+                  onCancelMovement={() => setAddForm((s) => ({ ...s, goalId: null }))}
+                  onTempTargetChange={(v) => setTargetEdit((s) => ({ ...s, amount: v }))}
+                  onTempTargetDateChange={(v) => setTargetEdit((s) => ({ ...s, date: v }))}
                   formatSoles={formatSoles}
                   simulatedAmount={simulation?.goalId === g.id ? simulatedDebt?.outstanding : undefined}
                   simulatedLabel={simulation?.goalId === g.id ? simulatedDebt?.person : undefined}
@@ -1046,14 +621,14 @@ export default function SavingsLedger() {
                     hasMore: movementHasMore[g.id] ?? false,
                     isLoadingMore: loadingMoreFor === g.id,
                     onLoadMore: () => handleLoadMoreMovements(g.id),
-                    editingId: editingMovement?.goalId === g.id ? editingMovement.movementId : null,
-                    editAmount: movementEditAmount,
-                    editKind: movementEditKind,
-                    editDesc: movementEditDesc,
+                    editingId: movementEdit?.goalId === g.id ? movementEdit.movementId : null,
+                    editAmount: movementEdit?.amount ?? "",
+                    editKind: movementEdit?.kind ?? "deposit",
+                    editDesc: movementEdit?.desc ?? "",
                     onEditClick: (movementId, current) => handleEditMovementClick(g.id, current),
-                    onEditAmountChange: setMovementEditAmount,
-                    onEditKindChange: setMovementEditKind,
-                    onEditDescChange: setMovementEditDesc,
+                    onEditAmountChange: (v) => setMovementEdit((s) => (s ? { ...s, amount: v } : s)),
+                    onEditKindChange: (k) => setMovementEdit((s) => (s ? { ...s, kind: k } : s)),
+                    onEditDescChange: (v) => setMovementEdit((s) => (s ? { ...s, desc: v } : s)),
                     onSaveEdit: handleSaveMovementEdit,
                     onCancelEdit: handleCancelMovementEdit,
                     onDeleteClick: (movementId) => setDeleteTarget({ kind: "movement", goalId: g.id, movementId }),
@@ -1064,8 +639,8 @@ export default function SavingsLedger() {
           </AnimatePresence>
 
           <div className="sd-newgoal-area">
-            {!showNewGoal ? (
-              <motion.button whileTap={{ scale: 0.96 }} className="sd-btn" onClick={() => setShowNewGoal(true)}>
+            {!newGoal.show ? (
+              <motion.button whileTap={{ scale: 0.96 }} className="sd-btn" onClick={() => setNewGoal((s) => ({ ...s, show: true }))}>
                 <Plus size={15} /> Nueva meta
               </motion.button>
             ) : (
@@ -1078,40 +653,36 @@ export default function SavingsLedger() {
                 <input
                   type="text"
                   placeholder="Nombre de la meta"
-                  value={newGoalName}
-                  onChange={(e) => setNewGoalName(e.target.value)}
+                  value={newGoal.name}
+                  onChange={(e) => setNewGoal((s) => ({ ...s, name: e.target.value }))}
                   autoFocus
                   aria-label="Nombre de la nueva meta"
                 />
                 <input
                   type="number"
                   placeholder="Monto objetivo (opcional)"
-                  value={newGoalTarget}
-                  onChange={(e) => setNewGoalTarget(e.target.value)}
+                  value={newGoal.target}
+                  onChange={(e) => setNewGoal((s) => ({ ...s, target: e.target.value }))}
                   aria-label="Monto objetivo"
                 />
                 <input
                   type="number"
                   placeholder="Monto ya ahorrado (opcional)"
-                  value={newGoalInitial}
-                  onChange={(e) => setNewGoalInitial(e.target.value)}
+                  value={newGoal.initial}
+                  onChange={(e) => setNewGoal((s) => ({ ...s, initial: e.target.value }))}
                   aria-label="Monto ya ahorrado"
                 />
                 <input
                   type="date"
-                  value={newGoalTargetDate}
-                  onChange={(e) => setNewGoalTargetDate(e.target.value)}
+                  value={newGoal.date}
+                  onChange={(e) => setNewGoal((s) => ({ ...s, date: e.target.value }))}
                   aria-label="Fecha objetivo (opcional)"
                 />
                 <div className="sd-newgoal-form-actions">
                   <button className="sd-btn" onClick={handleCreateGoal}>
                     <Check size={14} /> Crear
                   </button>
-                  <button className="sd-link-btn" onClick={() => {
-                    setShowNewGoal(false);
-                    setNewGoalTargetDate("");
-                    setNewGoalInitial("");
-                  }}>
+                  <button className="sd-link-btn" onClick={() => setNewGoal((s) => ({ ...s, show: false, date: "", initial: "" }))}>
                     <X size={14} /> Cancelar
                   </button>
                 </div>
