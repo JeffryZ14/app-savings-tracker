@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ResponsiveContainer,
@@ -28,6 +28,7 @@ import {
   updateMonthlyRate,
 } from "@/features/goals/actions";
 import { getDebts, deleteDebt, deleteDebtPayment } from "@/features/debts/actions";
+import { simulatePortfolio } from "@/lib/projection";
 import GoalCard from "@/components/GoalCard";
 import DebtsSection, { type DebtData, type SimulationTargetGoal } from "@/components/DebtsSection";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -219,6 +220,24 @@ export default function SavingsLedger() {
   }
 
   const simulatedDebt = simulation ? debts.find((d) => d.id === simulation.debtId) : null;
+
+  // Proyección de cascada: al completarse una meta, su % liberado se reasigna a las demás
+  // (misma regla que `computeAllocations` en el server) — así el estimado de cada meta
+  // refleja que se acelera cuando otra meta termina antes, no una tasa constante para siempre.
+  const portfolioProjection = useMemo(
+    () => simulatePortfolio(
+      goals.map((g) => ({
+        id: g.id,
+        currentAmount: g.currentAmount,
+        targetAmount: g.targetAmount,
+        isCompleted: g.isCompleted,
+        allocationPct: g.allocationPct,
+        allocationManual: g.allocationManual,
+      })),
+      monthlyRate
+    ),
+    [goals, monthlyRate]
+  );
 
   const totalCurrentAll = goals.reduce((s, g) => s + g.currentAmount, 0);
   const targeted = goals.filter((g) => g.targetAmount > 0);
@@ -991,6 +1010,8 @@ export default function SavingsLedger() {
                   simulatedAmount={simulation?.goalId === g.id ? simulatedDebt?.outstanding : undefined}
                   simulatedLabel={simulation?.goalId === g.id ? simulatedDebt?.person : undefined}
                   onClearSimulation={() => setSimulation(null)}
+                  portfolioCompletionMonth={portfolioProjection.get(g.id)?.completionMonth ?? null}
+                  portfolioCompletionLabel={portfolioProjection.get(g.id)?.completionLabel ?? null}
                   movementHistory={{
                     items: movementPages[g.id] ?? [],
                     hasMore: movementHasMore[g.id] ?? false,

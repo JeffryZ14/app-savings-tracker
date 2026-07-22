@@ -82,6 +82,8 @@ interface GoalCardProps {
   simulatedAmount?: number;
   simulatedLabel?: string | null;
   onClearSimulation?: () => void;
+  portfolioCompletionMonth: number | null;
+  portfolioCompletionLabel: string | null;
 }
 
 export default function GoalCard(props: GoalCardProps) {
@@ -91,6 +93,11 @@ export default function GoalCard(props: GoalCardProps) {
   const remaining = g.targetAmount > 0 ? Math.max(0, g.targetAmount - g.currentAmount) : 0;
   const allocatedMonthly = props.monthlyRate * (g.allocationPct / 100);
   const projection = calculateProjection(g, allocatedMonthly);
+  // Reemplaza el "onTrack" ingenuo (tasa constante) por la simulación en cascada del padre:
+  // considera que al completar otras metas, el % liberado se reasigna a esta.
+  const onTrack = projection?.mode === "target-date"
+    ? props.portfolioCompletionMonth !== null && props.portfolioCompletionMonth <= (projection.monthsUntilTarget ?? Infinity)
+    : false;
 
   const simulatedTotal = props.simulatedAmount ? g.currentAmount + props.simulatedAmount : null;
   const simulatedPct = simulatedTotal !== null && g.targetAmount > 0
@@ -260,9 +267,9 @@ export default function GoalCard(props: GoalCardProps) {
               </button>
             </div>
           )}
-          {projection && projection.mode === "pace-only" && (
+          {projection && projection.mode === "pace-only" && props.portfolioCompletionMonth !== null && (
             <div className="sd-projection">
-              Estimado con tu {g.allocationPct.toFixed(0)}% asignado ({props.formatSoles(allocatedMonthly)}/mes): {projection.paceLabel} ({projection.paceMonths} {projection.paceMonths === 1 ? "mes" : "meses"})
+              Estimado con reasignación automática al completar otras metas: {props.portfolioCompletionLabel} ({props.portfolioCompletionMonth} {props.portfolioCompletionMonth === 1 ? "mes" : "meses"})
             </div>
           )}
           {projection && projection.mode === "target-date" && (
@@ -270,11 +277,11 @@ export default function GoalCard(props: GoalCardProps) {
               <div className="sd-projection">
                 Meta: {projection.targetDateLabel}
               </div>
-              <div className={"sd-projection-track " + (projection.onTrack ? "on-track" : "behind")}>
-                {projection.onTrack ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
-                {projection.onTrack
-                  ? `Vas al día — necesitas ~${props.formatSoles(projection.requiredMonthly ?? 0)}/mes`
-                  : `Vas atrasado — necesitas ~${props.formatSoles(projection.requiredMonthly ?? 0)}/mes para llegar a tiempo`}
+              <div className={"sd-projection-track " + (onTrack ? "on-track" : "behind")}>
+                {onTrack ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+                {onTrack
+                  ? `Vas al día — con reasignación automática llegarías ${props.portfolioCompletionLabel}`
+                  : `Vas atrasado — necesitas ~${props.formatSoles(projection.requiredMonthly ?? 0)}/mes constante para llegar a tiempo${props.portfolioCompletionLabel ? ` (a tu ritmo actual llegarías ${props.portfolioCompletionLabel})` : ""}`}
               </div>
             </>
           )}
