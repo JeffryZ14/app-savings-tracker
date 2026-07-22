@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, X, Check, ChevronDown, ChevronUp, HandCoins, Trash2, Pencil } from "lucide-react";
+import { Plus, X, Check, ChevronDown, ChevronUp, HandCoins, Trash2, Pencil, TrendingUp } from "lucide-react";
 import { createDebt, addDebtPayment, updateDebt } from "@/features/debts/actions";
 import type { DeleteTarget } from "@/components/DeleteConfirmModal";
 
@@ -24,6 +24,14 @@ export interface DebtData {
   payments: DebtPaymentData[];
 }
 
+export interface SimulationTargetGoal {
+  id: string;
+  title: string;
+  icon: string;
+  targetAmount: number;
+  isCompleted: boolean;
+}
+
 interface DebtsSectionProps {
   debts: DebtData[];
   totalReceivable: number;
@@ -31,6 +39,10 @@ interface DebtsSectionProps {
   onChanged: () => Promise<void> | void;
   onError: (msg: string) => void;
   onRequestDelete: (target: DeleteTarget) => void;
+  goals: SimulationTargetGoal[];
+  simulation: { debtId: string; goalId: string } | null;
+  onSimulate: (debtId: string, goalId: string) => void;
+  onClearSimulation: () => void;
 }
 
 export default function DebtsSection(props: DebtsSectionProps) {
@@ -46,6 +58,9 @@ export default function DebtsSection(props: DebtsSectionProps) {
   const [editPerson, setEditPerson] = useState("");
   const [editConcept, setEditConcept] = useState("");
   const [editAmount, setEditAmount] = useState("");
+  const [simSelectId, setSimSelectId] = useState<string | null>(null);
+
+  const simulableGoals = props.goals.filter((g) => g.targetAmount > 0 && !g.isCompleted);
 
   async function handleCreate() {
     const p = person.trim();
@@ -223,6 +238,10 @@ export default function DebtsSection(props: DebtsSectionProps) {
               const paidPct = d.amount > 0 ? Math.min(100, ((d.amount - d.outstanding) / d.amount) * 100) : 0;
               const isPaying = payingId === d.id;
               const isEditing = editingId === d.id;
+              const isSimSelecting = simSelectId === d.id;
+              const activeSimGoal = props.simulation?.debtId === d.id
+                ? simulableGoals.find((g) => g.id === props.simulation!.goalId)
+                : null;
               return (
                 <div key={d.id} className={"dbt-item" + (d.isSettled ? " settled" : "")}>
                   <div className="dbt-item-top">
@@ -259,6 +278,11 @@ export default function DebtsSection(props: DebtsSectionProps) {
                         <Pencil size={13} /> Editar
                       </button>
                     )}
+                    {!d.isSettled && !isSimSelecting && !activeSimGoal && simulableGoals.length > 0 && (
+                      <button className="dbt-btn" onClick={() => setSimSelectId(d.id)}>
+                        <TrendingUp size={13} /> Simular
+                      </button>
+                    )}
                     <button
                       className="dbt-btn danger"
                       onClick={() => props.onRequestDelete({ kind: "debt", id: d.id, person: d.person })}
@@ -266,6 +290,42 @@ export default function DebtsSection(props: DebtsSectionProps) {
                       <X size={13} /> Eliminar
                     </button>
                   </div>
+
+                  {isSimSelecting && !activeSimGoal && (
+                    <div className="dbt-pay-form">
+                      <select
+                        className="dbt-input grow"
+                        defaultValue=""
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            props.onSimulate(d.id, e.target.value);
+                            setSimSelectId(null);
+                          }
+                        }}
+                        aria-label={`Elegir meta para simular el pago de ${d.person}`}
+                        autoFocus
+                      >
+                        <option value="" disabled>Elegir meta…</option>
+                        {simulableGoals.map((g) => (
+                          <option key={g.id} value={g.id}>{g.icon} {g.title}</option>
+                        ))}
+                      </select>
+                      <button className="dbt-btn" onClick={() => setSimSelectId(null)}>
+                        <X size={13} /> Cancelar
+                      </button>
+                    </div>
+                  )}
+
+                  {activeSimGoal && (
+                    <div className="dbt-pay-form">
+                      <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+                        Simulando en: <strong style={{ color: "var(--text)" }}>{activeSimGoal.icon} {activeSimGoal.title}</strong>
+                      </span>
+                      <button className="dbt-btn" onClick={() => props.onClearSimulation()}>
+                        <X size={13} /> Quitar
+                      </button>
+                    </div>
+                  )}
 
                   {isEditing && (
                     <div className="dbt-pay-form">

@@ -9,6 +9,9 @@ export interface Movement {
   type: MovementType;
   description: string | null;
   createdAt: string;
+  /** Marca el depósito semilla al crear la meta (plata ya ahorrada antes de usar la app) —
+   * se excluye del resumen mensual para no aparentar que se ahorró este mes. */
+  isInitial?: boolean;
 }
 
 export interface Goal {

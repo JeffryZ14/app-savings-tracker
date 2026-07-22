@@ -79,6 +79,9 @@ interface GoalCardProps {
   onTempTargetDateChange: (date: string) => void;
   formatSoles: (n: number) => string;
   movementHistory: MovementHistoryProps;
+  simulatedAmount?: number;
+  simulatedLabel?: string | null;
+  onClearSimulation?: () => void;
 }
 
 export default function GoalCard(props: GoalCardProps) {
@@ -88,6 +91,12 @@ export default function GoalCard(props: GoalCardProps) {
   const remaining = g.targetAmount > 0 ? Math.max(0, g.targetAmount - g.currentAmount) : 0;
   const allocatedMonthly = props.monthlyRate * (g.allocationPct / 100);
   const projection = calculateProjection(g, allocatedMonthly);
+
+  const simulatedTotal = props.simulatedAmount ? g.currentAmount + props.simulatedAmount : null;
+  const simulatedPct = simulatedTotal !== null && g.targetAmount > 0
+    ? Math.min(100, (simulatedTotal / g.targetAmount) * 100)
+    : null;
+  const simulatedComplete = simulatedPct !== null && simulatedTotal! >= g.targetAmount;
 
   const allMovements = [...g.movements, ...props.movementHistory.items];
 
@@ -223,10 +232,34 @@ export default function GoalCard(props: GoalCardProps) {
               animate={{ width: pct + "%" }}
               transition={{ duration: 0.6, ease: "easeOut" }}
             />
+            {simulatedPct !== null && simulatedPct > pct && (
+              <motion.div
+                className="sd-bar-fill-ghost"
+                initial={{ width: pct + "%" }}
+                animate={{ left: pct + "%", width: (simulatedPct - pct) + "%" }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+              />
+            )}
           </div>
           <div className="sd-pct">
             {pct.toFixed(1)}%{!complete ? ` — falta ${props.formatSoles(remaining)}` : " — meta cumplida"}
           </div>
+          {simulatedPct !== null && (
+            <div className={"sd-sim-banner" + (simulatedComplete ? " complete" : "")}>
+              <span>
+                {simulatedComplete
+                  ? `¡Completarías esta meta si ${props.simulatedLabel ? `te paga ${props.simulatedLabel}` : "te pagan esta deuda"}! (${simulatedPct.toFixed(0)}%)`
+                  : `Si ${props.simulatedLabel ? `te paga ${props.simulatedLabel}` : "te pagan esta deuda"}, llegarías a ${simulatedPct.toFixed(0)}%`}
+              </span>
+              <button
+                className="sd-history-icon-btn"
+                onClick={() => props.onClearSimulation?.()}
+                aria-label="Quitar simulación"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
           {projection && projection.mode === "pace-only" && (
             <div className="sd-projection">
               Estimado con tu {g.allocationPct.toFixed(0)}% asignado ({props.formatSoles(allocatedMonthly)}/mes): {projection.paceLabel} ({projection.paceMonths} {projection.paceMonths === 1 ? "mes" : "meses"})

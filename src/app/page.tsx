@@ -29,7 +29,7 @@ import {
 } from "@/features/goals/actions";
 import { getDebts, deleteDebt, deleteDebtPayment } from "@/features/debts/actions";
 import GoalCard from "@/components/GoalCard";
-import DebtsSection, { type DebtData } from "@/components/DebtsSection";
+import DebtsSection, { type DebtData, type SimulationTargetGoal } from "@/components/DebtsSection";
 import ThemeToggle from "@/components/ThemeToggle";
 import DeleteConfirmModal, { type DeleteTarget } from "@/components/DeleteConfirmModal";
 import Toast from "@/components/Toast";
@@ -105,6 +105,8 @@ export default function SavingsLedger() {
   const [tempTarget, setTempTarget] = useState("");
   const [editingAllocation, setEditingAllocation] = useState<string | null>(null);
   const [tempAllocation, setTempAllocation] = useState("");
+  // Simulación "¿y si me pagan esta deuda?" — solo visual, nunca se persiste ni cambia currentAmount real.
+  const [simulation, setSimulation] = useState<{ debtId: string; goalId: string } | null>(null);
   const [showNewGoal, setShowNewGoal] = useState(false);
   const [newGoalName, setNewGoalName] = useState("");
   const [newGoalTarget, setNewGoalTarget] = useState("");
@@ -114,6 +116,7 @@ export default function SavingsLedger() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [newGoalTargetDate, setNewGoalTargetDate] = useState("");
+  const [newGoalInitial, setNewGoalInitial] = useState("");
   const [tempTargetDate, setTempTargetDate] = useState("");
   const [editingMovement, setEditingMovement] = useState<{ goalId: string; movementId: string } | null>(null);
   const [movementEditAmount, setMovementEditAmount] = useState("");
@@ -215,6 +218,8 @@ export default function SavingsLedger() {
     updateMonthlyRate(v).catch(() => {});
   }
 
+  const simulatedDebt = simulation ? debts.find((d) => d.id === simulation.debtId) : null;
+
   const totalCurrentAll = goals.reduce((s, g) => s + g.currentAmount, 0);
   const targeted = goals.filter((g) => g.targetAmount > 0);
   const totalCurrentTargeted = targeted.reduce((s, g) => s + g.currentAmount, 0);
@@ -280,17 +285,20 @@ export default function SavingsLedger() {
     const name = newGoalName.trim();
     if (!name) return;
     const targetVal = parseFloat(newGoalTarget);
+    const initialVal = parseFloat(newGoalInitial);
     const res = await createGoal({
       title: name,
       icon: "⭐",
       targetAmount: !isNaN(targetVal) && targetVal > 0 ? targetVal : 0,
       targetDate: newGoalTargetDate || undefined,
+      initialAmount: !isNaN(initialVal) && initialVal > 0 ? initialVal : undefined,
     });
     if (res.success) {
       setShowNewGoal(false);
       setNewGoalName("");
       setNewGoalTarget("");
       setNewGoalTargetDate("");
+      setNewGoalInitial("");
       await loadData();
     } else {
       setErrorMsg(res.error ?? "Error al crear la meta");
@@ -592,11 +600,27 @@ export default function SavingsLedger() {
         }
         .sd-bar-fill { height: 100%; border-radius: 999px; background: var(--brand); }
         .sd-bar-fill.complete { background: var(--gold); }
+        .sd-bar-fill-ghost {
+          position: absolute; top: 0; height: 100%; border-radius: 999px;
+          background: repeating-linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--gold) 55%, transparent) 0 6px,
+            color-mix(in srgb, var(--gold) 30%, transparent) 6px 12px
+          );
+        }
         .sd-pct { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin-top: 8px; }
         .sd-projection { font-size: 12.5px; color: var(--muted); margin-top: 7px; }
         .sd-projection-track { font-family: var(--font-mono); font-size: 12px; margin-top: 6px; display: flex; align-items: center; gap: 5px; }
         .sd-projection-track.on-track { color: var(--brand); }
         .sd-projection-track.behind { color: var(--negative); }
+        .sd-sim-banner {
+          display: flex; align-items: center; justify-content: space-between; gap: 8px;
+          margin-top: 8px; padding: 7px 10px; border-radius: 9px;
+          background: color-mix(in srgb, var(--gold) 12%, transparent);
+          border: 1px dashed color-mix(in srgb, var(--gold) 45%, transparent);
+          font-size: 12px; color: var(--text);
+        }
+        .sd-sim-banner.complete { font-weight: 600; }
 
         .sd-stamp { position: absolute; top: 14px; right: 12px; pointer-events: none; }
         .sd-badge-complete {
@@ -799,7 +823,7 @@ export default function SavingsLedger() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
-          <p className="sd-hero-eyebrow">Libreta de Ahorros · Jeffry · Lima, Perú</p>
+          <p className="sd-hero-eyebrow">Libreta de Ahorros</p>
           <p className="sd-hero-label">Saldo total</p>
           <div className="sd-hero-amount">{formatSoles(totalCurrentAll)}</div>
 
@@ -964,6 +988,9 @@ export default function SavingsLedger() {
                   onTempTargetChange={setTempTarget}
                   onTempTargetDateChange={setTempTargetDate}
                   formatSoles={formatSoles}
+                  simulatedAmount={simulation?.goalId === g.id ? simulatedDebt?.outstanding : undefined}
+                  simulatedLabel={simulation?.goalId === g.id ? simulatedDebt?.person : undefined}
+                  onClearSimulation={() => setSimulation(null)}
                   movementHistory={{
                     items: movementPages[g.id] ?? [],
                     hasMore: movementHasMore[g.id] ?? false,
@@ -1014,6 +1041,13 @@ export default function SavingsLedger() {
                   aria-label="Monto objetivo"
                 />
                 <input
+                  type="number"
+                  placeholder="Monto ya ahorrado (opcional)"
+                  value={newGoalInitial}
+                  onChange={(e) => setNewGoalInitial(e.target.value)}
+                  aria-label="Monto ya ahorrado"
+                />
+                <input
                   type="date"
                   value={newGoalTargetDate}
                   onChange={(e) => setNewGoalTargetDate(e.target.value)}
@@ -1026,6 +1060,7 @@ export default function SavingsLedger() {
                   <button className="sd-link-btn" onClick={() => {
                     setShowNewGoal(false);
                     setNewGoalTargetDate("");
+                    setNewGoalInitial("");
                   }}>
                     <X size={14} /> Cancelar
                   </button>
@@ -1042,6 +1077,12 @@ export default function SavingsLedger() {
           onChanged={loadData}
           onError={setErrorMsg}
           onRequestDelete={setDeleteTarget}
+          goals={goals.map((g): SimulationTargetGoal => ({
+            id: g.id, title: g.title, icon: g.icon, targetAmount: g.targetAmount, isCompleted: g.isCompleted,
+          }))}
+          simulation={simulation}
+          onSimulate={(debtId, goalId) => setSimulation({ debtId, goalId })}
+          onClearSimulation={() => setSimulation(null)}
         />
       </div>
     </main>

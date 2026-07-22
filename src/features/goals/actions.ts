@@ -12,6 +12,7 @@ const GoalSchema = z.object({
   description: z.string().max(500).optional(),
   targetAmount: z.number().min(0),
   targetDate: z.string().optional(),
+  initialAmount: z.number().min(0).optional(),
 });
 
 const MovementSchema = z.object({
@@ -77,21 +78,35 @@ export async function createGoal(data: {
   description?: string;
   targetAmount: number;
   targetDate?: string | null;
+  initialAmount?: number;
 }) {
   try {
     const goalData = GoalSchema.parse(data);
+    const initialAmount = round2(goalData.initialAmount ?? 0);
     const goal = await withDb((db) => {
+      const now = new Date().toISOString();
+      const movements: Movement[] = [];
+      if (initialAmount > 0) {
+        movements.push({
+          id: newId(),
+          amount: initialAmount,
+          type: "deposit",
+          description: "Monto inicial",
+          createdAt: now,
+          isInitial: true,
+        });
+      }
       const g = {
         id: newId(),
         title: goalData.title,
         icon: goalData.icon ?? "⭐",
         description: goalData.description ?? null,
         targetAmount: goalData.targetAmount,
-        currentAmount: 0,
+        currentAmount: initialAmount,
         targetDate: goalData.targetDate ? new Date(goalData.targetDate + "T12:00:00").toISOString() : null,
-        isCompleted: false,
-        createdAt: new Date().toISOString(),
-        movements: [] as Movement[],
+        isCompleted: computeIsCompleted(initialAmount, round2(goalData.targetAmount)),
+        createdAt: now,
+        movements,
         allocationPct: null,
       };
       db.goals.unshift(g);
@@ -439,7 +454,7 @@ export async function getMonthlySummary() {
 
     const deposits = db.goals.flatMap((g) =>
       g.movements
-        .filter((m) => m.type === "deposit")
+        .filter((m) => m.type === "deposit" && !m.isInitial)
         .map((m) => ({ amount: m.amount, key: ymKey(m.createdAt) }))
     );
 
