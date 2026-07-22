@@ -247,6 +247,18 @@ export default function SavingsLedger() {
   const monthlyMet = currentMonthTotal >= monthlyRate;
   const monthRemaining = Math.max(0, monthlyRate - currentMonthTotal);
 
+  // Racha: meses consecutivos cumpliendo la meta mensual, mirando hacia atrás
+  // desde el mes actual (solo cuenta el mes en curso si ya está cumplido).
+  const streak = useMemo(() => {
+    if (monthlyRate <= 0) return 0;
+    let count = 0;
+    for (let i = monthlyMet ? 0 : 1; i < monthHistory.length; i++) {
+      if (monthHistory[i].total >= monthlyRate) count++;
+      else break;
+    }
+    return count;
+  }, [monthHistory, monthlyRate, monthlyMet]);
+
   const chartData = monthHistory
     .slice(0, 6)
     .reverse()
@@ -563,6 +575,12 @@ export default function SavingsLedger() {
           margin-top: 3px; font-weight: 500;
         }
         .sd-monthly-sub .muted { color: var(--muted); font-weight: 400; }
+        .sd-streak-chip {
+          font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+          color: var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent);
+          border: 1px solid color-mix(in srgb, var(--gold) 25%, transparent);
+          padding: 5px 10px; border-radius: 999px; white-space: nowrap;
+        }
         .sd-chart-wrap { margin-top: 16px; height: 130px; }
 
         /* Goals grid */
@@ -918,6 +936,11 @@ export default function SavingsLedger() {
                 </p>
               </div>
             </div>
+            {streak >= 2 && (
+              <span className="sd-streak-chip" title={`${streak} meses seguidos cumpliendo tu meta mensual`}>
+                🔥 {streak} meses seguidos
+              </span>
+            )}
           </div>
 
           {chartData.length > 0 && (
