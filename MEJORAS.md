@@ -110,14 +110,22 @@ Implementado en olas incrementales, cada una con build + typecheck + tests en ve
 ### Ola 5 — Documentación
 - README, `CLAUDE.md`, `SECURITY.md` y este archivo actualizados (comandos de test, features, variables de entorno, auth opcional).
 
+### Ola 6 — Lo que había quedado diferido, implementado
+
+- **A3 — Store detrás de una interfaz**: `src/lib/db/dataStore.ts` (`DataStore`) + `src/lib/db/jsonFileStore.ts` (`JsonFileStore`, el backend actual). `store.ts` programa contra la interfaz; cambiar de backend a futuro no toca las Server Actions.
+- **F4 — Categorías de metas**: campo `Goal.category` (nullable, con default en `normalizeDb` para compatibilidad hacia atrás), editable inline en `GoalCard` (chip + datalist de sugerencias) y filtro (`CategoryFilter`) sobre la grilla.
+- **F3 — Recordatorio de aporte mensual**: `MonthlyReminderBanner`, descartable, recuerda el descarte por mes calendario en `localStorage`.
+- **S1 — Extracción de componentes**: `SummaryHero` (KPIs + progreso + editor de tasa) y `NewGoalForm` salen de `page.tsx`.
+- **SEC2 — PIN con PBKDF2 + sal**: `usePinLock.ts` migra de SHA-256 plano a PBKDF2-SHA256 (210k iteraciones, sal aleatoria por PIN), formato `pbkdf2$iter$saltHex$hashHex`. El formato legado se sigue aceptando al desbloquear y se migra de forma transparente en el primer desbloqueo exitoso — ningún PIN existente se invalida.
+- **SEC4 — Docker sin root**: el proceso Node corre como el usuario `node` (no-root); el contenedor sigue arrancando como root sólo para que `entrypoint.sh` pueda `chown`/`chmod` el volumen de `DATA_DIR` antes de dejar caer privilegios con `su-exec`. *No se pudo verificar con un `docker build && docker run` real en este entorno (sandbox sin daemon Docker disponible)* — el patrón (usuario `node` + `su-exec`) es el estándar de las imágenes oficiales de Node, pero vale la pena un build real en CI/local antes de confiar en él en producción.
+- **U2 — Actualizaciones optimistas**: acotadas a agregar/editar/eliminar movimiento y eliminar meta (las interacciones más frecuentes) — el estado local se parchea con el resultado ya conocido de la Server Action antes de esperar el round-trip de `loadData()`. Target/asignación/categoría siguen refrescando vía `loadData()` completo (menor frecuencia, mayor complejidad de replicar redondeo/fechas exactamente).
+- **C1 — Upgrades mayores**: `framer-motion` 10→12 y `recharts` 2→3. Verificado con capturas de pantalla antes/después (donut, gráfico de tendencia, tooltips) y pruebas de interacción reales en Chromium (expandir/colapsar, formularios, hover de tooltips) — sin errores de consola ni diferencias visuales.
+
+Todo verificado además con smoke tests reales en Chromium (no sólo `npm run build`): creación de meta, categoría inline, filtro, banner, depósito/edición/borrado con reflejo optimista, deshacer, y el flujo completo de PIN (activar, bloquear, PIN incorrecto rechazado, PIN correcto desbloquea, upgrade a `pbkdf2$` confirmado).
+
 ## 🕓 Deferido a propósito (con razón)
 
 | Mejora | Por qué se difiere |
 |---|---|
-| Optimistic updates (reemplazar el `loadData()` completo) | Cambia el flujo de datos central; riesgo de regresión alto para una ganancia de latencia menor en una app de un usuario. |
-| Extraer más subcomponentes de `page.tsx` | `page.tsx` ya delega la mayor parte en componentes; más extracción es churn con poco retorno hoy. |
-| Categorías/etiquetas de metas | Feature real pero implica cambio de modelo de datos + UI; mejor decidir alcance antes. |
-| PIN con PBKDF2/sal | El PIN es solo candado de UI; el riesgo real (acceso de servidor) ya se cubre con `APP_ACCESS_PASSWORD`. Migrar el hash rompería PINs existentes. |
-| Abstraer `store.ts` tras interfaz `DataStore` | Sin valor inmediato al volumen actual; hacerlo cuando se plantee migrar a SQLite. |
-| Upgrades mayores (`framer-motion` 10→actual, `recharts` 2→3) | Requieren QA visual manual que no se puede validar automáticamente; Dependabot ya vigila. |
-| Recordatorio de aporte mensual (push/PWA) | Necesita decisión de producto (canal, permisos). |
+| Meta compartida multiusuario | No es un cambio incremental — requiere rediseño del modelo de datos (multi-tenant) y autenticación real de usuarios, no sólo la puerta de acceso opcional actual. |
+| Verificación de SEC4 con un build de Docker real | Este entorno de sandbox no tiene un daemon Docker disponible; validar con `docker compose build && docker compose up` en una máquina con Docker antes del primer deploy tras este cambio. |
