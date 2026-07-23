@@ -8,12 +8,32 @@ Ver `CLAUDE.md` para arquitectura completa.
 
 ```
 npm install
-npm run dev      # http://localhost:3000
-npm run build    # build de producción (standalone)
-npm start        # corre el build standalone
+npm run dev        # http://localhost:3000
+npm run build      # build de producción (standalone)
+npm start          # corre el build standalone
 npm run lint
-npx tsc --noEmit
+npm run typecheck  # tsc --noEmit
+npm test           # suite de Vitest (lógica financiera)
+npm run test:watch # Vitest en modo watch
 ```
+
+## Funcionalidades
+
+- Metas de ahorro con monto/fecha objetivo, movimientos (depósitos/retiros), historial paginado y proyecciones.
+- Reparto del ahorro mensual entre metas (automático o % manual) con proyección en cascada.
+- Deudas a tu favor (informativo) y la opción de aplicar un cobro como depósito a una meta.
+- Racha mensual, tendencia (12 meses) e insights derivados del historial.
+- **Datos y respaldo**: descargar respaldo JSON (fidelidad total), exportar movimientos a CSV e importar un respaldo (reemplaza todo, con confirmación).
+- **Deshacer** al eliminar metas, movimientos, deudas o pagos (ventana de unos segundos).
+- **PIN local** (candado de UI por dispositivo) — no reemplaza autenticación de servidor.
+
+## Variables de entorno
+
+| Variable | Efecto |
+|---|---|
+| `DATA_DIR` | Carpeta del `db.json` (por defecto `<cwd>/data`). |
+| `APP_ACCESS_PASSWORD` | **Opcional.** Si se define, activa Basic Auth a nivel de servidor (protege también las Server Actions). Sin ella, la app queda sin auth como siempre. |
+| `APP_ACCESS_USER` | Usuario para el Basic Auth (por defecto `ahorros`). |
 
 ## Docker local
 

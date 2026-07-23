@@ -9,14 +9,19 @@ Next.js 15 App Router app for tracking personal savings goals ("Mis Metas de Aho
 ## Commands
 
 ```
-npm run dev      # dev server (localhost:3000, or next free port if 3000 busy)
-npm run build    # production build (standalone output)
-npm start         # run the standalone build
-npm run lint      # next lint
-npx tsc --noEmit  # type-check only
+npm run dev        # dev server (localhost:3000, or next free port if 3000 busy)
+npm run build      # production build (standalone output)
+npm start           # run the standalone build
+npm run lint        # eslint
+npm run typecheck   # tsc --noEmit
+npm test            # Vitest run (unit + integration)
+npm run test:watch  # Vitest watch
 ```
 
-No test suite exists yet.
+Tests use **Vitest** (`vitest.config.ts`, alias `@/` → `src/`). Pure logic has unit tests
+(`src/lib/**/*.test.ts`); server actions have integration tests against a temp `DATA_DIR` with
+`next/cache` mocked (`src/features/**/*.test.ts`). CI (`.github/workflows/ci.yml`) runs lint,
+typecheck and test in parallel; build depends on all three.
 
 ### Docker
 
@@ -39,8 +44,12 @@ Always `docker compose down` before rebuilding — an old container left running
   - `readDb()` defaults missing fields (`debts: parsed.debts ?? []`) so older `db.json` files without the debts field still load — keep this pattern for any future field additions.
 - `src/features/goals/actions.ts` — all goal/movement mutations/queries as Next.js Server Actions (`"use server"`).
 - `src/features/debts/actions.ts` — debts are a separate, informational feature: money owed *to* the user by other people. Same server-action pattern as goals (`zod` validation, `{ success, error? }` shapes, `revalidatePath("/")`). Deliberately **not** wired into goals/savings math — `getDebts()` returns each debt's `outstanding` amount plus a `totalReceivable`, but nothing here writes to `Goal.currentAmount` or the overall balance. If debts ever need to feed into a goal (e.g. "apply this payment as a deposit"), that's a deliberate future integration, not an oversight.
-- Together, `goals/actions.ts` and `debts/actions.ts` are the only interface `src/app/page.tsx` talks to — there are no API routes.
-- `src/app/page.tsx` — single-page client component (`"use client"`) holding all UI state. Calls the server actions directly, re-fetches via `loadData()` after every mutation (no optimistic updates, no cache invalidation beyond `revalidatePath("/")` in the actions).
+- `src/features/backup/actions.ts` — `exportBackup()` returns the whole `DbShape`; `importBackup(payload)` **replaces** the entire store after `zod` validation (destructive; the UI confirms first). Consumed by `src/components/BackupControls.tsx` (JSON backup download, CSV export of movements, JSON import).
+- **Undo on delete**: every delete action (`deleteGoal`/`deleteMovement`/`deleteDebt`/`deleteDebtPayment`) returns the removed entity, and a matching `restore*` action re-inserts it (recomputing balance where relevant). `page.tsx` stashes the removed payload and shows `UndoToast` for a few seconds. Keep delete/restore symmetric if you add fields.
+- **Shared pure logic** lives outside the `"use server"` files (which can only export async functions): `src/lib/money.ts` (`round2`, `isTargetReached`), `src/lib/constants.ts` (defaults, `MONTH_LABELS`, page sizes), `src/lib/goals/allocation.ts` (`computeAllocations`, `splitIntegerEvenly`, …), `src/lib/goals/summary.ts` (Lima-timezone month grouping). These are the unit-tested core — don't re-inline copies into the actions.
+- `src/middleware.ts` — **optional** server-side Basic Auth, active only when `APP_ACCESS_PASSWORD` is set (user from `APP_ACCESS_USER`, default `ahorros`). Reads the env var by bracket notation *inside* the function so Next doesn't inline it at build time (it must resolve per-request in the Node standalone runtime). Unlike the local PIN (UI-only), this gates the Server Actions too. Security headers (CSP, X-Frame-Options, etc.) are set in `next.config.js` `headers()`.
+- Together, `goals/actions.ts`, `debts/actions.ts` and `backup/actions.ts` are the only interface `src/app/page.tsx` talks to — there are no API routes.
+- `src/app/page.tsx` — single-page client component (`"use client"`) holding all UI state. Calls the server actions directly, re-fetches via `loadData()` after every mutation (no optimistic updates, no cache invalidation beyond `revalidatePath("/")` in the actions). `getGoals()` now also returns `movementsTotal` so the client seeds "Cargar más" from the real count, not a page-size heuristic.
 - `monthlyRate` (the user's monthly savings target) is persisted in **two places**: `localStorage` (per-device, the primary source — preferred over the server value on load) and the JSON store (`DbShape.monthlyRate`, a cross-device backup). It is written to both **only on an explicit user change** (the rate-edit save handler in `page.tsx`), never on mount — writing it on every mount would rewrite the whole `db.json` each page load and could clobber the persisted value via a read/write race with `getMonthlyRate`.
 
 ### Docker / deployment

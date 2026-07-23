@@ -79,3 +79,45 @@ Con las 3 prioridades altas del reporte original resueltas, esto es lo que queda
 ---
 
 *Actualizado tras implementar: refactor de componentes, confirmación de borrado, dependencias muertas, edición/borrado de movimientos, historial paginado, proyecciones con fecha objetivo, mejoras de accesibilidad y UI.*
+
+---
+
+## 🚀 Ronda de mejoras (auditoría exhaustiva)
+
+Implementado en olas incrementales, cada una con build + typecheck + tests en verde.
+
+### Ola 1 — Limpieza y bugs de bajo riesgo
+- **DRY**: `round2` e `isTargetReached` → `src/lib/money.ts`; constantes (rate default, ícono, tamaño de página, meses de historial, `MONTH_LABELS`) → `src/lib/constants.ts`; asignación → `src/lib/goals/allocation.ts`; resumen mensual → `src/lib/goals/summary.ts`. Eliminadas las copias duplicadas.
+- **Bug**: `getMonthlySummary` ahora devuelve **12 meses** (antes 6) → la racha y la tendencia dejan de toparse en 6.
+- **Bug**: la semilla de "Cargar más" usaba `movements.length === 10` (botón fantasma con exactamente 10 movimientos) → ahora usa `movementsTotal`.
+- **Bug**: `getMovements` sube el tope de `limit` de 50 a 500 (restauración de páginas tras recargar).
+- **Bug**: `ensureFile` usa flag `wx` (evita doble escritura en el primer arranque); `createGoal` redondea `targetAmount`.
+- **Limpieza**: eliminado código muerto (`getGoalById`, `updateGoalTarget`); ESLint ignora `.next/`.
+
+### Ola 2 — Red de seguridad (tests + CI)
+- **Vitest** configurado; 40 tests que cubren la lógica que se rompe en silencio (money, allocation, summary, projection, y las actions vía `DATA_DIR` temporal).
+- **CI**: nuevos jobs `typecheck` y `test`; `build` depende de los tres.
+
+### Ola 3 — Valor de usuario
+- **Exportar/Importar respaldo** (`backup/actions.ts` + `BackupControls`): descarga JSON, exporta CSV de movimientos e importa un respaldo (reemplazo con confirmación).
+- **Deshacer al eliminar** (meta/movimiento/deuda/pago): las actions de borrado devuelven la entidad y hay `restore*` para reinsertarla; `UndoToast` da la ventana para deshacer.
+
+### Ola 4 — Endurecimiento
+- **Cabeceras de seguridad** en `next.config.js` (CSP, X-Frame-Options, etc.).
+- **Auth opcional de servidor** (`middleware.ts`) activada por `APP_ACCESS_PASSWORD` — protege también las Server Actions. Sin la variable, la app sigue sin auth.
+- **Modales accesibles** (`useModalA11y`): focus-trap, Escape y restauración de foco en `DeleteConfirmModal` y `PinOverlay`.
+
+### Ola 5 — Documentación
+- README, `CLAUDE.md`, `SECURITY.md` y este archivo actualizados (comandos de test, features, variables de entorno, auth opcional).
+
+## 🕓 Deferido a propósito (con razón)
+
+| Mejora | Por qué se difiere |
+|---|---|
+| Optimistic updates (reemplazar el `loadData()` completo) | Cambia el flujo de datos central; riesgo de regresión alto para una ganancia de latencia menor en una app de un usuario. |
+| Extraer más subcomponentes de `page.tsx` | `page.tsx` ya delega la mayor parte en componentes; más extracción es churn con poco retorno hoy. |
+| Categorías/etiquetas de metas | Feature real pero implica cambio de modelo de datos + UI; mejor decidir alcance antes. |
+| PIN con PBKDF2/sal | El PIN es solo candado de UI; el riesgo real (acceso de servidor) ya se cubre con `APP_ACCESS_PASSWORD`. Migrar el hash rompería PINs existentes. |
+| Abstraer `store.ts` tras interfaz `DataStore` | Sin valor inmediato al volumen actual; hacerlo cuando se plantee migrar a SQLite. |
+| Upgrades mayores (`framer-motion` 10→actual, `recharts` 2→3) | Requieren QA visual manual que no se puede validar automáticamente; Dependabot ya vigila. |
+| Recordatorio de aporte mensual (push/PWA) | Necesita decisión de producto (canal, permisos). |
