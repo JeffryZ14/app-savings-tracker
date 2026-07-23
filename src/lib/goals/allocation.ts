@@ -1,7 +1,16 @@
-import type { Goal } from "@/lib/db/store";
+/** Forma mínima que necesita el reparto — deliberadamente más angosta que `Goal` (en vez de
+ * importarlo de `db/store`) para que este módulo, además de las Server Actions, lo pueda usar
+ * el cliente sobre su propio estado local (actualizaciones optimistas en page.tsx) sin tener
+ * que fabricar un `Goal` completo con `movements`, `createdAt`, etc. */
+export interface AllocatableGoal {
+  id: string;
+  targetAmount: number;
+  isCompleted: boolean;
+  allocationPct: number | null;
+}
 
 /** Una meta participa del reparto del ahorro mensual si tiene objetivo y no está completa. */
-export function isActiveForAllocation(g: Pick<Goal, "targetAmount" | "isCompleted">): boolean {
+export function isActiveForAllocation(g: Pick<AllocatableGoal, "targetAmount" | "isCompleted">): boolean {
   return g.targetAmount > 0 && !g.isCompleted;
 }
 
@@ -18,7 +27,7 @@ export function splitIntegerEvenly(total: number, count: number): number[] {
  * el resto (100 - suma de manuales) se divide en enteros lo más parejo posible entre las
  * que no lo tienen. */
 export function computeAllocations(
-  goals: Goal[]
+  goals: AllocatableGoal[]
 ): Map<string, { pct: number; manual: boolean }> {
   const active = goals.filter(isActiveForAllocation);
   const manualActive = active.filter((g) => g.allocationPct !== null);
@@ -46,7 +55,7 @@ export function computeAllocations(
 
 /** Suma de porcentajes manuales de las demás metas activas — para validar que al fijar un
  * nuevo % manual la suma no supere 100. */
-export function sumOtherManualPct(goals: Goal[], excludeId: string): number {
+export function sumOtherManualPct(goals: AllocatableGoal[], excludeId: string): number {
   return goals
     .filter((x) => x.id !== excludeId && isActiveForAllocation(x) && x.allocationPct !== null)
     .reduce((s, x) => s + (x.allocationPct ?? 0), 0);

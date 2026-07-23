@@ -54,8 +54,7 @@ Always `docker compose down` before rebuilding — an old container left running
 
 ### Docker / deployment
 
-- Runs as **root** in the container (`Dockerfile` has no `USER` directive) — deliberate, to avoid permission mismatches between the container's user and whatever uid owns the Railway/Docker-Desktop-mounted volume at `DATA_DIR`. Don't reintroduce a non-root user without also solving that.
-- `entrypoint.sh` does `mkdir -p "$DATA_DIR" && chmod -R 777 "$DATA_DIR"` on every boot as a safety net for volume permission mismatches, then execs `node server.js` (the Next standalone build).
+- The container **starts as root** (no `USER` directive in the Dockerfile) but the actual Node process runs as the non-root `node` user (uid 1000, built into the official Node Alpine image). `entrypoint.sh` does `mkdir -p "$DATA_DIR"`, `chown -R node:node "$DATA_DIR"` (with a `chmod -R 777` fallback for volume backends that don't allow `chown`) — this solves the same Railway/Docker-Desktop volume-permission-mismatch problem the old root-only setup worked around — then drops privileges via `su-exec node` before `exec`ing `node server.js` (the Next standalone build). If you touch this, keep the drop-privileges-after-chown order; don't reintroduce a process that runs as root.
 - `docker-compose.yml` mounts `./data:/app/data` — on Railway this should be the persistent volume's mount path. Without a real persistent volume, all goals/movements are lost on redeploy.
 - No native/compiled dependencies anymore (better-sqlite3 and Prisma were removed) — the Dockerfile doesn't need build toolchains, keep it that way.
 

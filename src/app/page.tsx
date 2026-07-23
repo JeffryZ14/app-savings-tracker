@@ -40,6 +40,8 @@ import {
   restoreDebtPayment,
 } from "@/features/debts/actions";
 import { simulatePortfolio } from "@/lib/projection";
+import { computeAllocations } from "@/lib/goals/allocation";
+import { isTargetReached } from "@/lib/money";
 import { MONTH_LABELS, DEFAULT_MONTHLY_RATE, MOVEMENTS_PAGE_SIZE } from "@/lib/constants";
 import GoalCard from "@/components/GoalCard";
 import AllocationDonut from "@/components/AllocationDonut";
@@ -311,12 +313,97 @@ export default function SavingsLedger() {
     .reverse()
     .map((m) => ({ ...m, label: MONTH_LABELS[m.month] }));
 
+  // Actualizaciones optimistas: tras una mutación de movimiento/meta aplicamos el resultado ya
+  // conocido (currentAmount, movement) directamente al estado local, en vez de que la UI se
+  // quede esperando el round-trip completo de loadData() para reflejar el cambio. React ya
+  // encola el re-render con el estado parcheado antes de que loadData() termine, así que
+  // seguimos esperándolo después para reconciliar lo que sí depende de más que la meta que
+  // cambió (resumen mensual, racha, deudas) sin introducir carreras nuevas entre llamadas.
+  // recomputeAllocations reutiliza la misma función pura que usa el servidor
+  // (computeAllocations), así el reparto automático entre metas se ve correcto de inmediato.
+  function recomputeAllocations(list: GoalData[]): GoalData[] {
+    const allocations = computeAllocations(list);
+    return list.map((g) => ({
+      ...g,
+      allocationPct: allocations.get(g.id)?.pct ?? 0,
+      allocationManual: allocations.get(g.id)?.manual ?? false,
+    }));
+  }
+
+  function patchGoalAfterMovement(goalId: string, movement: MovementData, currentAmount: number) {
+    setGoals((prev) =>
+      recomputeAllocations(
+        prev.map((g) =>
+          g.id !== goalId
+            ? g
+            : {
+                ...g,
+                currentAmount,
+                isCompleted: isTargetReached(currentAmount, g.targetAmount),
+                movementsTotal: g.movementsTotal + 1,
+                movements: [movement, ...g.movements].slice(0, MOVEMENTS_PAGE_SIZE),
+              }
+        )
+      )
+    );
+  }
+
+  function patchMovementLocally(goalId: string, movement: MovementData, currentAmount: number) {
+    setGoals((prev) =>
+      recomputeAllocations(
+        prev.map((g) =>
+          g.id !== goalId
+            ? g
+            : {
+                ...g,
+                currentAmount,
+                isCompleted: isTargetReached(currentAmount, g.targetAmount),
+                movements: g.movements.map((m) => (m.id === movement.id ? movement : m)),
+              }
+        )
+      )
+    );
+    setMovementPages((prev) => {
+      const items = prev[goalId];
+      if (!items || !items.some((m) => m.id === movement.id)) return prev;
+      return { ...prev, [goalId]: items.map((m) => (m.id === movement.id ? movement : m)) };
+    });
+  }
+
+  function removeMovementLocally(goalId: string, movementId: string, currentAmount: number) {
+    setGoals((prev) =>
+      recomputeAllocations(
+        prev.map((g) =>
+          g.id !== goalId
+            ? g
+            : {
+                ...g,
+                currentAmount,
+                isCompleted: isTargetReached(currentAmount, g.targetAmount),
+                movementsTotal: Math.max(0, g.movementsTotal - 1),
+                movements: g.movements.filter((m) => m.id !== movementId),
+              }
+        )
+      )
+    );
+    setMovementPages((prev) => {
+      const items = prev[goalId];
+      if (!items) return prev;
+      return { ...prev, [goalId]: items.filter((m) => m.id !== movementId) };
+    });
+  }
+
+  function removeGoalLocally(goalId: string) {
+    setGoals((prev) => recomputeAllocations(prev.filter((g) => g.id !== goalId)));
+  }
+
   async function handleAddMovement(id: string) {
     const amt = parseFloat(addForm.amount);
     if (!amt || amt <= 0) return;
     const res = await addMovement(id, { amount: amt, type: addForm.kind });
     if (res.success) {
       setAddForm((s) => ({ ...s, goalId: null, amount: "" }));
+      patchGoalAfterMovement(id, res.movement!, res.currentAmount!);
       await loadData();
     } else {
       setErrorMsg(res.error ?? "Error al registrar el movimiento");
@@ -406,6 +493,7 @@ export default function SavingsLedger() {
       const res = await deleteGoal(target.id);
       if (res.success) {
         setDeleteTarget(null);
+        removeGoalLocally(target.id);
         await loadData();
         if (res.removed) offerUndo("Meta eliminada", () => restoreGoal(res.removed!));
       } else {
@@ -415,6 +503,7 @@ export default function SavingsLedger() {
       const res = await deleteMovement(target.goalId, target.movementId);
       if (res.success) {
         setDeleteTarget(null);
+        removeMovementLocally(target.goalId, target.movementId, res.currentAmount!);
         await loadData();
         if (res.removed) offerUndo("Movimiento eliminado", () => restoreMovement(target.goalId, res.removed!));
       } else {
@@ -459,13 +548,15 @@ export default function SavingsLedger() {
     if (!movementEdit) return;
     const amt = parseFloat(movementEdit.amount);
     if (!amt || amt <= 0) return;
-    const res = await updateMovement(movementEdit.goalId, movementEdit.movementId, {
+    const goalId = movementEdit.goalId;
+    const res = await updateMovement(goalId, movementEdit.movementId, {
       amount: amt,
       type: movementEdit.kind,
       description: movementEdit.desc.trim() || undefined,
     });
     if (res.success) {
       handleCancelMovementEdit();
+      patchMovementLocally(goalId, res.movement!, res.currentAmount!);
       await loadData();
     } else {
       setErrorMsg(res.error ?? "Error al actualizar el movimiento");
