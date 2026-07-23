@@ -1,0 +1,30 @@
+.catf-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--sp-2) 0 var(--sp-4);
+}
+
+.catf-chip {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.catf-chip:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.catf-chip.active {
+  color: #fff;
+  background: var(--brand);
+  border-color: var(--brand);
+}

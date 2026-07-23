@@ -19,6 +19,7 @@ const GoalSchema = z.object({
   title: z.string(),
   icon: z.string(),
   description: z.string().nullable().optional().default(null),
+  category: z.string().nullable().optional().default(null),
   targetAmount: z.number(),
   currentAmount: z.number(),
   targetDate: z.string().nullable().optional().default(null),
@@ -73,6 +74,7 @@ export async function importBackup(payload: unknown) {
       goals: parsed.goals.map((g) => ({
         ...g,
         description: g.description ?? null,
+        category: g.category ?? null,
         targetDate: g.targetDate ?? null,
         allocationPct: g.allocationPct ?? null,
         movements: g.movements.map((m) => ({ ...m, description: m.description ?? null })),

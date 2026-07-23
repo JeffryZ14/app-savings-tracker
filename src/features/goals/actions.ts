@@ -14,6 +14,7 @@ const GoalSchema = z.object({
   title: z.string().min(1, "El nombre es requerido").max(120),
   icon: z.string().max(10).optional(),
   description: z.string().max(500).optional(),
+  category: z.string().max(60).optional(),
   targetAmount: z.number().min(0),
   targetDate: z.string().optional(),
   initialAmount: z.number().min(0).optional(),
@@ -38,6 +39,7 @@ export async function createGoal(data: {
   title: string;
   icon?: string;
   description?: string;
+  category?: string;
   targetAmount: number;
   targetDate?: string | null;
   initialAmount?: number;
@@ -63,6 +65,7 @@ export async function createGoal(data: {
         title: goalData.title,
         icon: goalData.icon ?? DEFAULT_GOAL_ICON,
         description: goalData.description ?? null,
+        category: goalData.category?.trim() || null,
         targetAmount: round2(goalData.targetAmount),
         currentAmount: initialAmount,
         targetDate: goalData.targetDate ? new Date(goalData.targetDate + "T12:00:00").toISOString() : null,
@@ -89,6 +92,7 @@ export async function updateGoal(id: string, data: {
   title?: string;
   icon?: string;
   description?: string;
+  category?: string | null;
   targetAmount?: number;
   targetDate?: string | null;
   allocationPct?: number | null;
@@ -115,6 +119,7 @@ export async function updateGoal(id: string, data: {
       if (data.title !== undefined) g.title = data.title;
       if (data.icon !== undefined) g.icon = data.icon;
       if (data.description !== undefined) g.description = data.description;
+      if (data.category !== undefined) g.category = data.category?.trim() || null;
       if (data.targetAmount !== undefined) g.targetAmount = data.targetAmount;
       if (data.targetDate !== undefined) {
         g.targetDate = data.targetDate ? new Date(data.targetDate + "T12:00:00").toISOString() : null;
@@ -377,6 +382,7 @@ export async function getGoals() {
         title: g.title,
         icon: g.icon,
         description: g.description,
+        category: g.category,
         targetAmount: round2(g.targetAmount),
         currentAmount: round2(g.currentAmount),
         targetDate: g.targetDate,

@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { Plus, ChevronDown, ChevronUp, X, Check, ArrowDownCircle, ArrowUpCircle, AlertTriangle, CheckCircle2, Trash2, TrendingUp } from "lucide-react";
+import { Plus, ChevronDown, ChevronUp, X, Check, ArrowDownCircle, ArrowUpCircle, AlertTriangle, CheckCircle2, Trash2, TrendingUp, Tag } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { calculateProjection } from "@/lib/projection";
@@ -26,6 +26,7 @@ interface GoalData {
   createdAt: string;
   allocationPct: number;
   allocationManual: boolean;
+  category: string | null;
   movements: MovementData[];
 }
 
@@ -54,11 +55,14 @@ interface GoalCardProps {
   isExpanded: boolean;
   isEditingTarget: boolean;
   isEditingAllocation: boolean;
+  isEditingCategory: boolean;
   movementKind: "deposit" | "withdrawal";
   amountInput: string;
   tempTarget: string;
   tempTargetDate: string;
   tempAllocation: string;
+  tempCategory: string;
+  categoryOptions: string[];
   idx: number;
   onAddClick: (id: string) => void;
   onExpandClick: (id: string) => void;
@@ -71,6 +75,10 @@ interface GoalCardProps {
   onCancelAllocationClick: () => void;
   onResetAllocationClick: (id: string) => void;
   onTempAllocationChange: (v: string) => void;
+  onEditCategoryClick: (id: string, current: string) => void;
+  onSaveCategoryClick: (id: string) => void;
+  onCancelCategoryClick: () => void;
+  onTempCategoryChange: (v: string) => void;
   onMovementKindChange: (kind: "deposit" | "withdrawal") => void;
   onAmountChange: (amount: string) => void;
   onQuickAmountClick: (amount: number) => void;
@@ -169,6 +177,41 @@ export default function GoalCard(props: GoalCardProps) {
           <Trash2 size={15} />
         </button>
       </div>
+
+      {/* ---- Categoría (opcional, libre) ----------------------------------- */}
+      {props.isEditingCategory ? (
+        <div className="gc-category-form">
+          <input
+            type="text"
+            list={`gc-cat-options-${g.id}`}
+            placeholder="Categoría (ej. Viaje, Emergencia)"
+            value={props.tempCategory}
+            onChange={(e) => props.onTempCategoryChange(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && props.onSaveCategoryClick(g.id)}
+            autoFocus
+            aria-label={`Categoría de ${g.title}`}
+          />
+          <datalist id={`gc-cat-options-${g.id}`}>
+            {props.categoryOptions.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+          <button className="sd-icon-btn" onClick={() => props.onSaveCategoryClick(g.id)} aria-label="Guardar categoría">
+            <Check size={13} />
+          </button>
+          <button className="sd-icon-btn" onClick={() => props.onCancelCategoryClick()} aria-label="Cancelar">
+            <X size={13} />
+          </button>
+        </div>
+      ) : (
+        <button
+          className={"gc-category-chip" + (g.category ? "" : " empty")}
+          onClick={() => props.onEditCategoryClick(g.id, g.category ?? "")}
+          aria-label={g.category ? `Categoría: ${g.category}. Editar` : "Agregar categoría"}
+        >
+          <Tag size={11} /> {g.category ?? "Agregar categoría"}
+        </button>
+      )}
 
       {/* ---- Compact summary: ring + info --------------------------------- */}
       <div className="gc-body">

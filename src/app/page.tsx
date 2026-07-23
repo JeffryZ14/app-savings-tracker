@@ -12,7 +12,7 @@ import {
   Tooltip,
   ReferenceLine,
 } from "recharts";
-import { Plus, X, Check, Pencil, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
 import { usePinLock } from "@/lib/usePinLock";
 import PinOverlay, { type PinOverlayMode } from "@/components/PinOverlay";
 
@@ -42,7 +42,6 @@ import {
 import { simulatePortfolio } from "@/lib/projection";
 import { MONTH_LABELS, DEFAULT_MONTHLY_RATE, MOVEMENTS_PAGE_SIZE } from "@/lib/constants";
 import GoalCard from "@/components/GoalCard";
-import StatTile from "@/components/StatTile";
 import AllocationDonut from "@/components/AllocationDonut";
 import InsightsPanel from "@/components/InsightsPanel";
 import DebtsSection, { type DebtData, type SimulationTargetGoal } from "@/components/DebtsSection";
@@ -52,6 +51,10 @@ import DeleteConfirmModal, { type DeleteTarget } from "@/components/DeleteConfir
 import Toast from "@/components/Toast";
 import UndoToast, { type UndoState } from "@/components/UndoToast";
 import Skeleton from "@/components/Skeleton";
+import SummaryHero from "@/components/SummaryHero";
+import NewGoalForm, { type NewGoalFormState } from "@/components/NewGoalForm";
+import CategoryFilter from "@/components/CategoryFilter";
+import MonthlyReminderBanner from "@/components/MonthlyReminderBanner";
 
 function formatSoles(n: number) {
   const r = Math.round(n);
@@ -72,6 +75,7 @@ interface GoalData {
   id: string; title: string; icon: string; targetAmount: number;
   currentAmount: number; targetDate: string | null; isCompleted: boolean; createdAt: string;
   allocationPct: number; allocationManual: boolean;
+  category: string | null;
   movementsTotal: number;
   movements: MovementData[];
 }
@@ -134,13 +138,19 @@ export default function SavingsLedger() {
   const [allocEdit, setAllocEdit] = useState<{ id: string | null; value: string }>({
     id: null, value: "",
   });
+  // Edición de la categoría libre de una meta.
+  const [categoryEdit, setCategoryEdit] = useState<{ id: string | null; value: string }>({
+    id: null, value: "",
+  });
+  // Filtro de categoría sobre la grilla de metas (null = todas).
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   // Edición del ahorro mensual estimado (rate) en el hero.
   const [rateEdit, setRateEdit] = useState<{ editing: boolean; value: string }>({
     editing: false, value: "",
   });
   // Formulario "nueva meta".
-  const [newGoal, setNewGoal] = useState<{ show: boolean; name: string; target: string; date: string; initial: string }>({
-    show: false, name: "", target: "", date: "", initial: "",
+  const [newGoal, setNewGoal] = useState<NewGoalFormState>({
+    show: false, name: "", target: "", date: "", initial: "", category: "",
   });
   // Edición de un movimiento ya registrado (null = ninguno en edición).
   const [movementEdit, setMovementEdit] = useState<
@@ -268,6 +278,14 @@ export default function SavingsLedger() {
     [goals, monthlyRate]
   );
 
+  // Categorías distintas usadas por al menos una meta, para el filtro y el datalist del
+  // formulario de nueva meta.
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(goals.map((g) => g.category).filter((c): c is string => !!c))).sort(),
+    [goals]
+  );
+  const filteredGoals = categoryFilter ? goals.filter((g) => g.category === categoryFilter) : goals;
+
   const totalCurrentAll = goals.reduce((s, g) => s + g.currentAmount, 0);
   const targeted = goals.filter((g) => g.targetAmount > 0);
   const totalCurrentTargeted = targeted.reduce((s, g) => s + g.currentAmount, 0);
@@ -347,15 +365,26 @@ export default function SavingsLedger() {
     const res = await createGoal({
       title: name,
       icon: "⭐",
+      category: newGoal.category.trim() || undefined,
       targetAmount: !isNaN(targetVal) && targetVal > 0 ? targetVal : 0,
       targetDate: newGoal.date || undefined,
       initialAmount: !isNaN(initialVal) && initialVal > 0 ? initialVal : undefined,
     });
     if (res.success) {
-      setNewGoal({ show: false, name: "", target: "", date: "", initial: "" });
+      setNewGoal({ show: false, name: "", target: "", date: "", initial: "", category: "" });
       await loadData();
     } else {
       setErrorMsg(res.error ?? "Error al crear la meta");
+    }
+  }
+
+  async function handleSaveCategory(id: string) {
+    const res = await updateGoal(id, { category: categoryEdit.value.trim() || null });
+    if (res.success) {
+      setCategoryEdit({ id: null, value: "" });
+      await loadData();
+    } else {
+      setErrorMsg(res.error ?? "Error al actualizar la categoría");
     }
   }
 
@@ -497,95 +526,31 @@ export default function SavingsLedger() {
       {(isLoading || !pinLock.ready) && <div className="sd-wrap"><Skeleton /></div>}
 
       <div className="sd-wrap" style={{ display: isLoading || !pinLock.ready ? "none" : "block" }}>
-        <motion.section
-          className="sd-resumen"
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-        >
-          <div className="sd-kpis">
-            <StatTile
-              label="Saldo total"
-              value={formatSoles(totalCurrentAll)}
-              accent="brand"
-              sub={totalTarget > 0 ? `${overallPct.toFixed(0)}% de tus metas` : "Sin objetivo definido"}
-            />
-            <StatTile
-              label="Este mes"
-              value={formatSoles(currentMonthTotal)}
-              accent={monthlyMet ? "brand" : "gold"}
-              sub={
-                monthlyMet
-                  ? `Meta cumplida · ${formatSoles(monthlyRate)}`
-                  : `de ${formatSoles(monthlyRate)} · faltan ${formatSoles(monthRemaining)}`
-              }
-            />
-            <StatTile
-              label="Por cobrar"
-              value={totalReceivable > 0 ? formatSoles(totalReceivable) : "—"}
-              accent="neutral"
-              sub={totalReceivable > 0 ? "Deudas a tu favor" : "Nada pendiente"}
-            />
-            <StatTile
-              label="Racha"
-              value={streak > 0 ? `${streak} ${streak === 1 ? "mes" : "meses"}` : "—"}
-              accent="gold"
-              sub={
-                streak >= 2
-                  ? "🔥 meses seguidos"
-                  : streak === 1
-                  ? "¡vas empezando!"
-                  : "Cumple tu meta mensual"
-              }
-            />
-          </div>
+        <MonthlyReminderBanner
+          monthlyMet={monthlyMet}
+          monthRemaining={monthRemaining}
+          monthlyRate={monthlyRate}
+          formatSoles={formatSoles}
+        />
 
-          <div className="sd-progress-band">
-            <div className="sd-pb-top">
-              <span className="sd-pb-title">Progreso hacia tus metas</span>
-              <span className="sd-pb-amounts sd-mono">
-                {formatSoles(totalCurrentTargeted)} de {formatSoles(totalTarget)}
-              </span>
-            </div>
-            <div className="sd-pb-track">
-              <motion.div
-                className={"sd-pb-fill" + (overallPct >= 100 ? " complete" : "")}
-                initial={{ width: 0 }}
-                animate={{ width: overallPct + "%" }}
-                transition={{ duration: 0.7, ease: "easeOut" }}
-              />
-            </div>
-            <div className="sd-pb-foot">
-              <span className="sd-pb-pct sd-mono">{overallPct.toFixed(1)}%</span>
-              {!rateEdit.editing ? (
-                <button
-                  className="sd-rate-btn"
-                  onClick={() => setRateEdit({ editing: true, value: String(monthlyRate) })}
-                >
-                  Ahorro mensual: {formatSoles(monthlyRate)}
-                  <Pencil size={13} />
-                </button>
-              ) : (
-                <span className="sd-rate-form2">
-                  <input
-                    type="number"
-                    className="sd-rate-input"
-                    value={rateEdit.value}
-                    onChange={(e) => setRateEdit((s) => ({ ...s, value: e.target.value }))}
-                    autoFocus
-                    aria-label="Ahorro mensual estimado"
-                  />
-                  <button className="sd-icon-btn" onClick={handleSaveRate} aria-label="Guardar">
-                    <Check size={15} />
-                  </button>
-                  <button className="sd-icon-btn" onClick={() => setRateEdit((s) => ({ ...s, editing: false }))} aria-label="Cancelar">
-                    <X size={15} />
-                  </button>
-                </span>
-              )}
-            </div>
-          </div>
-        </motion.section>
+        <SummaryHero
+          totalCurrentAll={totalCurrentAll}
+          totalCurrentTargeted={totalCurrentTargeted}
+          totalTarget={totalTarget}
+          overallPct={overallPct}
+          currentMonthTotal={currentMonthTotal}
+          monthlyRate={monthlyRate}
+          monthRemaining={monthRemaining}
+          monthlyMet={monthlyMet}
+          totalReceivable={totalReceivable}
+          streak={streak}
+          rateEdit={rateEdit}
+          onStartRateEdit={() => setRateEdit({ editing: true, value: String(monthlyRate) })}
+          onRateValueChange={(v) => setRateEdit((s) => ({ ...s, value: v }))}
+          onSaveRate={handleSaveRate}
+          onCancelRateEdit={() => setRateEdit((s) => ({ ...s, editing: false }))}
+          formatSoles={formatSoles}
+        />
 
         <motion.div
           className="sd-dashgrid"
@@ -640,6 +605,8 @@ export default function SavingsLedger() {
           {goals.length > 0 && <span className="sd-section-sub">{goals.length} {goals.length === 1 ? "meta" : "metas"}</span>}
         </div>
 
+        <CategoryFilter categories={categoryOptions} value={categoryFilter} onChange={setCategoryFilter} />
+
         <div className="sd-grid">
           {goals.length === 0 && (
             <motion.div
@@ -653,11 +620,22 @@ export default function SavingsLedger() {
               </p>
             </motion.div>
           )}
+          {goals.length > 0 && filteredGoals.length === 0 && (
+            <motion.div
+              className="sd-empty-state"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <p className="sd-empty-text">Ninguna meta en esta categoría.</p>
+            </motion.div>
+          )}
           <AnimatePresence mode="popLayout">
-            {goals.map((g, idx) => {
+            {filteredGoals.map((g, idx) => {
               const isAdding = addForm.goalId === g.id;
               const isEditingTarget = targetEdit.id === g.id;
               const isEditingAllocation = allocEdit.id === g.id;
+              const isEditingCategory = categoryEdit.id === g.id;
               const isExpanded = !!expanded[g.id];
 
               return (
@@ -669,11 +647,14 @@ export default function SavingsLedger() {
                   isExpanded={isExpanded}
                   isEditingTarget={isEditingTarget}
                   isEditingAllocation={isEditingAllocation}
+                  isEditingCategory={isEditingCategory}
                   movementKind={addForm.kind}
                   amountInput={addForm.amount}
                   tempTarget={targetEdit.amount}
                   tempTargetDate={targetEdit.date}
                   tempAllocation={allocEdit.value}
+                  tempCategory={categoryEdit.value}
+                  categoryOptions={categoryOptions}
                   idx={idx}
                   onAddClick={(id) => setAddForm({ goalId: id, kind: "deposit", amount: "" })}
                   onExpandClick={(id) => setExpanded((p) => ({ ...p, [id]: !p[id] }))}
@@ -688,6 +669,10 @@ export default function SavingsLedger() {
                   onCancelAllocationClick={() => setAllocEdit((s) => ({ ...s, id: null }))}
                   onResetAllocationClick={handleResetAllocation}
                   onTempAllocationChange={(v) => setAllocEdit((s) => ({ ...s, value: v }))}
+                  onEditCategoryClick={(id, current) => setCategoryEdit({ id, value: current })}
+                  onSaveCategoryClick={handleSaveCategory}
+                  onCancelCategoryClick={() => setCategoryEdit({ id: null, value: "" })}
+                  onTempCategoryChange={(v) => setCategoryEdit((s) => ({ ...s, value: v }))}
                   onMovementKindChange={(k) => setAddForm((s) => ({ ...s, kind: k }))}
                   onAmountChange={(v) => setAddForm((s) => ({ ...s, amount: v }))}
                   onQuickAmountClick={(amount) => setAddForm((s) => ({ ...s, amount: String(amount) }))}
@@ -724,55 +709,18 @@ export default function SavingsLedger() {
           </AnimatePresence>
 
           <div className="sd-newgoal-area">
-            {!newGoal.show ? (
-              <motion.button whileTap={{ scale: 0.96 }} className="sd-btn" onClick={() => setNewGoal((s) => ({ ...s, show: true }))}>
-                <Plus size={15} /> Nueva meta
-              </motion.button>
-            ) : (
-              <motion.div
-                className="sd-newgoal-form"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <input
-                  type="text"
-                  placeholder="Nombre de la meta"
-                  value={newGoal.name}
-                  onChange={(e) => setNewGoal((s) => ({ ...s, name: e.target.value }))}
-                  autoFocus
-                  aria-label="Nombre de la nueva meta"
-                />
-                <input
-                  type="number"
-                  placeholder="Monto objetivo (opcional)"
-                  value={newGoal.target}
-                  onChange={(e) => setNewGoal((s) => ({ ...s, target: e.target.value }))}
-                  aria-label="Monto objetivo"
-                />
-                <input
-                  type="number"
-                  placeholder="Monto ya ahorrado (opcional)"
-                  value={newGoal.initial}
-                  onChange={(e) => setNewGoal((s) => ({ ...s, initial: e.target.value }))}
-                  aria-label="Monto ya ahorrado"
-                />
-                <input
-                  type="date"
-                  value={newGoal.date}
-                  onChange={(e) => setNewGoal((s) => ({ ...s, date: e.target.value }))}
-                  aria-label="Fecha objetivo (opcional)"
-                />
-                <div className="sd-newgoal-form-actions">
-                  <button className="sd-btn" onClick={handleCreateGoal}>
-                    <Check size={14} /> Crear
-                  </button>
-                  <button className="sd-link-btn" onClick={() => setNewGoal((s) => ({ ...s, show: false, date: "", initial: "" }))}>
-                    <X size={14} /> Cancelar
-                  </button>
-                </div>
-              </motion.div>
-            )}
+            <NewGoalForm
+              state={newGoal}
+              categoryOptions={categoryOptions}
+              onShow={() => setNewGoal((s) => ({ ...s, show: true }))}
+              onCancel={() => setNewGoal((s) => ({ ...s, show: false, date: "", initial: "", category: "" }))}
+              onCreate={handleCreateGoal}
+              onNameChange={(v) => setNewGoal((s) => ({ ...s, name: v }))}
+              onTargetChange={(v) => setNewGoal((s) => ({ ...s, target: v }))}
+              onInitialChange={(v) => setNewGoal((s) => ({ ...s, initial: v }))}
+              onDateChange={(v) => setNewGoal((s) => ({ ...s, date: v }))}
+              onCategoryChange={(v) => setNewGoal((s) => ({ ...s, category: v }))}
+            />
           </div>
         </div>
 

@@ -110,3 +110,29 @@ describe("updateGoal (asignación %)", () => {
     expect((await updateGoal(a.goal!.id, { allocationPct: 120 })).success).toBe(false);
   });
 });
+
+describe("categoría de metas", () => {
+  it("crea una meta con categoría y la expone en getGoals", async () => {
+    const { createGoal, getGoals } = await loadActions();
+    await createGoal({ title: "Viaje", targetAmount: 1000, category: "Viajes" });
+    const goals = await getGoals();
+    expect(goals.goals![0].category).toBe("Viajes");
+  });
+
+  it("sin categoría queda null; espacios en blanco también se normalizan a null", async () => {
+    const { createGoal, getGoals } = await loadActions();
+    await createGoal({ title: "Sin cat", targetAmount: 1000 });
+    await createGoal({ title: "Espacios", targetAmount: 1000, category: "   " });
+    const goals = await getGoals();
+    expect(goals.goals!.every((g) => g.category === null)).toBe(true);
+  });
+
+  it("updateGoal permite fijar y luego limpiar la categoría", async () => {
+    const { createGoal, updateGoal, getGoals } = await loadActions();
+    const g = await createGoal({ title: "Meta", targetAmount: 1000 });
+    await updateGoal(g.goal!.id, { category: "Emergencia" });
+    expect((await getGoals()).goals![0].category).toBe("Emergencia");
+    await updateGoal(g.goal!.id, { category: null });
+    expect((await getGoals()).goals![0].category).toBeNull();
+  });
+});

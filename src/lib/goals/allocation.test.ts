@@ -20,6 +20,7 @@ function goal(partial: Partial<Goal> & { id: string }): Goal {
     createdAt: "2025-01-01T00:00:00.000Z",
     movements: [],
     allocationPct: partial.allocationPct ?? null,
+    category: partial.category ?? null,
   };
 }
 
