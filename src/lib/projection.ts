@@ -1,7 +1,11 @@
 import { round2 } from "@/lib/money";
 
 function addMonthsToNow(months: number): Date {
+  // Fija el día en 1 antes de sumar: si no, en un mes de 31 días `setMonth` puede
+  // desbordar al mes siguiente cuando el mes destino tiene menos días (ej. 31-ene
+  // + 1 mes → "31-feb" no existe → rueda a marzo, corriendo la etiqueta un mes).
   const d = new Date();
+  d.setDate(1);
   d.setMonth(d.getMonth() + months);
   return d;
 }
