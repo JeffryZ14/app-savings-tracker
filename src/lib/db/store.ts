@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { DEFAULT_MONTHLY_RATE } from "@/lib/constants";
 
 export type MovementType = "deposit" | "withdrawal";
 
@@ -66,11 +67,13 @@ function newId(): string {
 
 async function ensureFile(): Promise<void> {
   await fs.mkdir(DATA_DIR, { recursive: true });
+  const empty: DbShape = { goals: [], debts: [], monthlyRate: DEFAULT_MONTHLY_RATE };
   try {
-    await fs.access(DB_FILE);
-  } catch {
-    const empty: DbShape = { goals: [], debts: [], monthlyRate: 1421 };
-    await fs.writeFile(DB_FILE, JSON.stringify(empty, null, 2), "utf-8");
+    // Flag "wx": crea sólo si no existe. Evita la carrera de dos lecturas concurrentes en el
+    // primer arranque escribiendo ambas el archivo por defecto (la segunda falla con EEXIST).
+    await fs.writeFile(DB_FILE, JSON.stringify(empty, null, 2), { encoding: "utf-8", flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
   }
 }
 
@@ -82,10 +85,10 @@ async function readDb(): Promise<DbShape> {
     return {
       goals: (parsed.goals ?? []).map((g) => ({ ...g, allocationPct: g.allocationPct ?? null })),
       debts: parsed.debts ?? [],
-      monthlyRate: parsed.monthlyRate ?? 1421,
+      monthlyRate: parsed.monthlyRate ?? DEFAULT_MONTHLY_RATE,
     };
   } catch {
-    return { goals: [], debts: [], monthlyRate: 1421 };
+    return { goals: [], debts: [], monthlyRate: DEFAULT_MONTHLY_RATE };
   }
 }
 

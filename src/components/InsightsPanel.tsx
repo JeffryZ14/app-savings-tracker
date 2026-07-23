@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { TrendingUp, TrendingDown, Award, Sparkles } from "lucide-react";
+import { MONTH_LABELS } from "@/lib/constants";
 import "./InsightsPanel.css";
 
 interface MonthRow {
@@ -15,8 +16,6 @@ interface InsightsPanelProps {
   formatSoles: (n: number) => string;
 }
 
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-
 interface Insight {
   key: string;
   icon: React.ReactNode;
@@ -24,7 +23,7 @@ interface Insight {
   tone: "up" | "down" | "neutral";
 }
 
-// Deriva insights puramente de `monthHistory` (ya cargado por getMonthlySummary, 6 meses
+// Deriva insights puramente de `monthHistory` (ya cargado por getMonthlySummary, 12 meses
 // incluyendo el actual en el índice 0) — sin server action nueva, todo cálculo es client-side.
 function buildInsights(monthHistory: MonthRow[], formatSoles: (n: number) => string): Insight[] {
   const insights: Insight[] = [];

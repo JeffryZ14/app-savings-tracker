@@ -32,6 +32,7 @@ import {
 } from "@/features/goals/actions";
 import { getDebts, deleteDebt, deleteDebtPayment } from "@/features/debts/actions";
 import { simulatePortfolio } from "@/lib/projection";
+import { MONTH_LABELS, DEFAULT_MONTHLY_RATE, MOVEMENTS_PAGE_SIZE } from "@/lib/constants";
 import GoalCard from "@/components/GoalCard";
 import StatTile from "@/components/StatTile";
 import AllocationDonut from "@/components/AllocationDonut";
@@ -47,8 +48,6 @@ function formatSoles(n: number) {
   return "S/ " + r.toLocaleString("es-PE");
 }
 
-const MONTH_LABELS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-
 type MovementKind = "deposit" | "withdrawal";
 
 interface MovementData {
@@ -63,6 +62,7 @@ interface GoalData {
   id: string; title: string; icon: string; targetAmount: number;
   currentAmount: number; targetDate: string | null; isCompleted: boolean; createdAt: string;
   allocationPct: number; allocationManual: boolean;
+  movementsTotal: number;
   movements: MovementData[];
 }
 
@@ -105,7 +105,7 @@ export default function SavingsLedger() {
   const [debts, setDebts] = useState<DebtData[]>([]);
   const [totalReceivable, setTotalReceivable] = useState(0);
   const [loaded, setLoaded] = useState(false);
-  const [monthlyRate, setMonthlyRate] = useState(1421);
+  const [monthlyRate, setMonthlyRate] = useState(DEFAULT_MONTHLY_RATE);
   const [currentMonthTotal, setCurrentMonthTotal] = useState(0);
   const [monthHistory, setMonthHistory] = useState<MonthRow[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -167,7 +167,7 @@ export default function SavingsLedger() {
       setGoals(gRes.goals as GoalData[]);
       const hasMoreSeed: Record<string, boolean> = {};
       for (const g of gRes.goals) {
-        hasMoreSeed[g.id] = g.movements.length === 10;
+        hasMoreSeed[g.id] = (g.movementsTotal ?? g.movements.length) > MOVEMENTS_PAGE_SIZE;
       }
 
       // Re-fetch previously loaded extra pages per goal so "cargar más" state survives a reload.
@@ -177,7 +177,7 @@ export default function SavingsLedger() {
         gRes.goals.map(async (g) => {
           const previousCount = previousPages[g.id]?.length ?? 0;
           if (previousCount === 0) return;
-          const res = await getMovements(g.id, 10, previousCount);
+          const res = await getMovements(g.id, MOVEMENTS_PAGE_SIZE, previousCount);
           if (res.success && res.movements) {
             restoredPages[g.id] = res.movements as MovementData[];
             hasMoreSeed[g.id] = res.hasMore ?? hasMoreSeed[g.id];
@@ -197,7 +197,7 @@ export default function SavingsLedger() {
       setErrorMsg(mRes.error ?? "Error al cargar el resumen mensual");
     }
     if (rRes.success) {
-      setMonthlyRate(rRes.monthlyRate ?? 1421);
+      setMonthlyRate(rRes.monthlyRate ?? DEFAULT_MONTHLY_RATE);
     }
     if (dRes.success && dRes.debts) {
       setDebts(dRes.debts as DebtData[]);
@@ -417,8 +417,8 @@ export default function SavingsLedger() {
 
   async function handleLoadMoreMovements(goalId: string) {
     setLoadingMoreFor(goalId);
-    const offset = 10 + (movementPages[goalId]?.length ?? 0);
-    const res = await getMovements(goalId, offset, 10);
+    const offset = MOVEMENTS_PAGE_SIZE + (movementPages[goalId]?.length ?? 0);
+    const res = await getMovements(goalId, offset, MOVEMENTS_PAGE_SIZE);
     if (res.success && res.movements) {
       setMovementPages((p) => ({ ...p, [goalId]: [...(p[goalId] ?? []), ...res.movements as MovementData[]] }));
       setMovementHasMore((p) => ({ ...p, [goalId]: res.hasMore ?? false }));

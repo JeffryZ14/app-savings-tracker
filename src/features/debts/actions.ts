@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withDb, readOnly, newId, type Debt, type DebtPayment, type Movement } from "@/lib/db/store";
+import { round2, isTargetReached } from "@/lib/money";
 
 const DebtSchema = z.object({
   person: z.string().min(1, "El nombre es requerido").max(120),
@@ -21,10 +22,6 @@ const PaymentSchema = z.object({
   description: z.string().max(300).optional(),
 });
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
 function outstandingOf(debt: Debt): number {
   const paid = debt.payments.reduce((s, p) => s + p.amount, 0);
   return round2(debt.amount - paid);
@@ -32,10 +29,6 @@ function outstandingOf(debt: Debt): number {
 
 function isSettled(debt: Debt): boolean {
   return outstandingOf(debt) <= 0.001;
-}
-
-function computeGoalIsCompleted(currentAmount: number, targetAmount: number): boolean {
-  return targetAmount > 0 && (currentAmount >= targetAmount || Math.abs(currentAmount - targetAmount) < 0.001);
 }
 
 function toPlain(debt: Debt) {
@@ -224,7 +217,7 @@ export async function applyDebtPaymentToGoal(
       g.movements.unshift(movement);
       const newCurrent = round2(g.currentAmount + parsed.amount);
       g.currentAmount = newCurrent;
-      g.isCompleted = computeGoalIsCompleted(newCurrent, round2(g.targetAmount));
+      g.isCompleted = isTargetReached(newCurrent, round2(g.targetAmount));
 
       return { debt: d };
     });

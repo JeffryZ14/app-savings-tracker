@@ -1,6 +1,4 @@
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
+import { round2 } from "@/lib/money";
 
 function addMonthsToNow(months: number): Date {
   const d = new Date();
