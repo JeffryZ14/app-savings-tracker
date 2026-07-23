@@ -1,0 +1,41 @@
+.mrb-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 auto var(--sp-4);
+  max-width: 1100px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--gold) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  border-radius: var(--r-md);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.mrb-icon {
+  color: var(--gold);
+  flex-shrink: 0;
+}
+
+.mrb-text {
+  flex: 1;
+}
+
+.mrb-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.mrb-close:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}

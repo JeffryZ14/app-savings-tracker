@@ -79,3 +79,53 @@ Con las 3 prioridades altas del reporte original resueltas, esto es lo que queda
 ---
 
 *Actualizado tras implementar: refactor de componentes, confirmación de borrado, dependencias muertas, edición/borrado de movimientos, historial paginado, proyecciones con fecha objetivo, mejoras de accesibilidad y UI.*
+
+---
+
+## 🚀 Ronda de mejoras (auditoría exhaustiva)
+
+Implementado en olas incrementales, cada una con build + typecheck + tests en verde.
+
+### Ola 1 — Limpieza y bugs de bajo riesgo
+- **DRY**: `round2` e `isTargetReached` → `src/lib/money.ts`; constantes (rate default, ícono, tamaño de página, meses de historial, `MONTH_LABELS`) → `src/lib/constants.ts`; asignación → `src/lib/goals/allocation.ts`; resumen mensual → `src/lib/goals/summary.ts`. Eliminadas las copias duplicadas.
+- **Bug**: `getMonthlySummary` ahora devuelve **12 meses** (antes 6) → la racha y la tendencia dejan de toparse en 6.
+- **Bug**: la semilla de "Cargar más" usaba `movements.length === 10` (botón fantasma con exactamente 10 movimientos) → ahora usa `movementsTotal`.
+- **Bug**: `getMovements` sube el tope de `limit` de 50 a 500 (restauración de páginas tras recargar).
+- **Bug**: `ensureFile` usa flag `wx` (evita doble escritura en el primer arranque); `createGoal` redondea `targetAmount`.
+- **Limpieza**: eliminado código muerto (`getGoalById`, `updateGoalTarget`); ESLint ignora `.next/`.
+
+### Ola 2 — Red de seguridad (tests + CI)
+- **Vitest** configurado; 40 tests que cubren la lógica que se rompe en silencio (money, allocation, summary, projection, y las actions vía `DATA_DIR` temporal).
+- **CI**: nuevos jobs `typecheck` y `test`; `build` depende de los tres.
+
+### Ola 3 — Valor de usuario
+- **Exportar/Importar respaldo** (`backup/actions.ts` + `BackupControls`): descarga JSON, exporta CSV de movimientos e importa un respaldo (reemplazo con confirmación).
+- **Deshacer al eliminar** (meta/movimiento/deuda/pago): las actions de borrado devuelven la entidad y hay `restore*` para reinsertarla; `UndoToast` da la ventana para deshacer.
+
+### Ola 4 — Endurecimiento
+- **Cabeceras de seguridad** en `next.config.js` (CSP, X-Frame-Options, etc.).
+- **Auth opcional de servidor** (`middleware.ts`) activada por `APP_ACCESS_PASSWORD` — protege también las Server Actions. Sin la variable, la app sigue sin auth.
+- **Modales accesibles** (`useModalA11y`): focus-trap, Escape y restauración de foco en `DeleteConfirmModal` y `PinOverlay`.
+
+### Ola 5 — Documentación
+- README, `CLAUDE.md`, `SECURITY.md` y este archivo actualizados (comandos de test, features, variables de entorno, auth opcional).
+
+### Ola 6 — Lo que había quedado diferido, implementado
+
+- **A3 — Store detrás de una interfaz**: `src/lib/db/dataStore.ts` (`DataStore`) + `src/lib/db/jsonFileStore.ts` (`JsonFileStore`, el backend actual). `store.ts` programa contra la interfaz; cambiar de backend a futuro no toca las Server Actions.
+- **F4 — Categorías de metas**: campo `Goal.category` (nullable, con default en `normalizeDb` para compatibilidad hacia atrás), editable inline en `GoalCard` (chip + datalist de sugerencias) y filtro (`CategoryFilter`) sobre la grilla.
+- **F3 — Recordatorio de aporte mensual**: `MonthlyReminderBanner`, descartable, recuerda el descarte por mes calendario en `localStorage`.
+- **S1 — Extracción de componentes**: `SummaryHero` (KPIs + progreso + editor de tasa) y `NewGoalForm` salen de `page.tsx`.
+- **SEC2 — PIN con PBKDF2 + sal**: `usePinLock.ts` migra de SHA-256 plano a PBKDF2-SHA256 (210k iteraciones, sal aleatoria por PIN), formato `pbkdf2$iter$saltHex$hashHex`. El formato legado se sigue aceptando al desbloquear y se migra de forma transparente en el primer desbloqueo exitoso — ningún PIN existente se invalida.
+- **SEC4 — Docker sin root**: el proceso Node corre como el usuario `node` (no-root); el contenedor sigue arrancando como root sólo para que `entrypoint.sh` pueda `chown`/`chmod` el volumen de `DATA_DIR` antes de dejar caer privilegios con `su-exec`. *No se pudo verificar con un `docker build && docker run` real en este entorno (sandbox sin daemon Docker disponible)* — el patrón (usuario `node` + `su-exec`) es el estándar de las imágenes oficiales de Node, pero vale la pena un build real en CI/local antes de confiar en él en producción.
+- **U2 — Actualizaciones optimistas**: acotadas a agregar/editar/eliminar movimiento y eliminar meta (las interacciones más frecuentes) — el estado local se parchea con el resultado ya conocido de la Server Action antes de esperar el round-trip de `loadData()`. Target/asignación/categoría siguen refrescando vía `loadData()` completo (menor frecuencia, mayor complejidad de replicar redondeo/fechas exactamente).
+- **C1 — Upgrades mayores**: `framer-motion` 10→12 y `recharts` 2→3. Verificado con capturas de pantalla antes/después (donut, gráfico de tendencia, tooltips) y pruebas de interacción reales en Chromium (expandir/colapsar, formularios, hover de tooltips) — sin errores de consola ni diferencias visuales.
+
+Todo verificado además con smoke tests reales en Chromium (no sólo `npm run build`): creación de meta, categoría inline, filtro, banner, depósito/edición/borrado con reflejo optimista, deshacer, y el flujo completo de PIN (activar, bloquear, PIN incorrecto rechazado, PIN correcto desbloquea, upgrade a `pbkdf2$` confirmado).
+
+## 🕓 Deferido a propósito (con razón)
+
+| Mejora | Por qué se difiere |
+|---|---|
+| Meta compartida multiusuario | No es un cambio incremental — requiere rediseño del modelo de datos (multi-tenant) y autenticación real de usuarios, no sólo la puerta de acceso opcional actual. |
+| Verificación de SEC4 con un build de Docker real | Este entorno de sandbox no tiene un daemon Docker disponible; validar con `docker compose build && docker compose up` en una máquina con Docker antes del primer deploy tras este cambio. |

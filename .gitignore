@@ -18,6 +18,9 @@ dist/
 .cache/
 *.tsbuildinfo
 
+# Test coverage
+/coverage/
+
 # IDE
 .vscode/
 .idea/

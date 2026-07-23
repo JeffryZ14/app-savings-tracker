@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, X } from "lucide-react";
+import { useModalA11y } from "@/lib/useModalA11y";
 
 export type DeleteTarget =
   | { kind: "goal"; id: string; title: string }
@@ -18,23 +20,26 @@ interface DeleteConfirmModalProps {
 const COPY: Record<DeleteTarget["kind"], { title: string; text: string }> = {
   goal: {
     title: "¿Eliminar meta?",
-    text: "Se eliminará la meta y todo su historial de movimientos. Esta acción no se puede deshacer.",
+    text: "Se eliminará la meta y todo su historial de movimientos. Podrás deshacerlo unos segundos.",
   },
   movement: {
     title: "¿Eliminar movimiento?",
-    text: "Se eliminará este movimiento y se recalculará el saldo de la meta. Esta acción no se puede deshacer.",
+    text: "Se eliminará este movimiento y se recalculará el saldo de la meta. Podrás deshacerlo unos segundos.",
   },
   debt: {
     title: "¿Eliminar deuda?",
-    text: "Se eliminará el registro de esta deuda y todos sus pagos. Esta acción no se puede deshacer.",
+    text: "Se eliminará el registro de esta deuda y todos sus pagos. Podrás deshacerlo unos segundos.",
   },
   "debt-payment": {
     title: "¿Eliminar pago?",
-    text: "Se eliminará este pago y volverá a sumarse al monto pendiente por cobrar. Esta acción no se puede deshacer.",
+    text: "Se eliminará este pago y volverá a sumarse al monto pendiente por cobrar. Podrás deshacerlo unos segundos.",
   },
 };
 
 export default function DeleteConfirmModal({ target, onConfirm, onCancel }: DeleteConfirmModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  useModalA11y(modalRef, target !== null, onCancel);
+
   return (
     <AnimatePresence>
       {target && (
@@ -46,7 +51,11 @@ export default function DeleteConfirmModal({ target, onConfirm, onCancel }: Dele
           onClick={onCancel}
         >
           <motion.div
+            ref={modalRef}
             className="sd-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={COPY[target.kind].title}
             initial={{ opacity: 0, scale: 0.95, y: -20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -20 }}

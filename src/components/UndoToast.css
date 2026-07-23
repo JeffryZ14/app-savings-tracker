@@ -1,0 +1,66 @@
+.undo-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px 10px 16px;
+  background: var(--text);
+  color: var(--bg);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+}
+
+.undo-msg {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.undo-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--bg);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--bg) 45%, transparent);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.undo-action:hover {
+  background: color-mix(in srgb, var(--bg) 18%, transparent);
+}
+
+.undo-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.undo-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: var(--bg);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.undo-close:hover {
+  opacity: 1;
+}
