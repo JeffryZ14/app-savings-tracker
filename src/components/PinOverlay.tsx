@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Lock, X, Check } from "lucide-react";
+import { useModalA11y } from "@/lib/useModalA11y";
 import "./PinOverlay.css";
 
 export type PinOverlayMode = "locked" | "setup" | "manage" | null;
@@ -27,6 +28,10 @@ export default function PinOverlay({ mode, onUnlock, onSetPin, onRemovePin, onCl
   const [pin2, setPin2] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // El candado ("locked") no debe cerrarse con Escape; los modos de configuración sí.
+  useModalA11y(cardRef, mode !== null, mode === "locked" ? undefined : onClose);
 
   useEffect(() => {
     setPinInput("");
@@ -104,6 +109,7 @@ export default function PinOverlay({ mode, onUnlock, onSetPin, onRemovePin, onCl
         exit={{ opacity: 0 }}
       >
         <motion.div
+          ref={cardRef}
           className="pin-card"
           initial={{ opacity: 0, y: 10, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
