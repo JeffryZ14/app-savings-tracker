@@ -34,6 +34,11 @@ export interface DebtPayment {
   amount: number;
   description: string | null;
   createdAt: string;
+  /** Si el pago se aplicó como depósito a una meta (feature "deuda como aporte").
+   * Se guarda el título además del id porque la meta puede borrarse después y el
+   * historial de la deuda debe seguir mostrando a qué se aplicó. */
+  appliedToGoalId?: string | null;
+  appliedToGoalTitle?: string | null;
 }
 
 export interface Debt {

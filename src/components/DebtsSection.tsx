@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, X, Check, ChevronDown, ChevronUp, HandCoins, Trash2, Pencil, TrendingUp } from "lucide-react";
-import { createDebt, addDebtPayment, updateDebt } from "@/features/debts/actions";
+import { createDebt, addDebtPayment, updateDebt, applyDebtPaymentToGoal } from "@/features/debts/actions";
 import type { DeleteTarget } from "@/components/DeleteConfirmModal";
 
 interface DebtPaymentData {
@@ -11,6 +11,8 @@ interface DebtPaymentData {
   amount: number;
   description: string | null;
   createdAt: string;
+  appliedToGoalId?: string | null;
+  appliedToGoalTitle?: string | null;
 }
 
 export interface DebtData {
@@ -54,6 +56,7 @@ export default function DebtsSection(props: DebtsSectionProps) {
   const [amount, setAmount] = useState("");
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState("");
+  const [payGoalId, setPayGoalId] = useState<string>("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPerson, setEditPerson] = useState("");
   const [editConcept, setEditConcept] = useState("");
@@ -106,10 +109,13 @@ export default function DebtsSection(props: DebtsSectionProps) {
   async function handlePay(debtId: string) {
     const amt = parseFloat(payAmount);
     if (!amt || amt <= 0) return;
-    const res = await addDebtPayment(debtId, { amount: amt });
+    const res = payGoalId
+      ? await applyDebtPaymentToGoal(debtId, payGoalId, { amount: amt })
+      : await addDebtPayment(debtId, { amount: amt });
     if (res.success) {
       setPayingId(null);
       setPayAmount("");
+      setPayGoalId("");
       await props.onChanged();
     } else {
       props.onError(res.error ?? "Error al registrar el pago");
@@ -298,7 +304,7 @@ export default function DebtsSection(props: DebtsSectionProps) {
 
                   <div className="dbt-actions">
                     {!d.isSettled && !isPaying && !isEditing && (
-                      <button className="dbt-btn primary" onClick={() => { setPayingId(d.id); setEditingId(null); setPayAmount(""); }}>
+                      <button className="dbt-btn primary" onClick={() => { setPayingId(d.id); setEditingId(null); setPayAmount(""); setPayGoalId(""); }}>
                         <HandCoins size={13} /> Registrar pago
                       </button>
                     )}
@@ -403,10 +409,23 @@ export default function DebtsSection(props: DebtsSectionProps) {
                         autoFocus
                         aria-label={`Monto pagado por ${d.person}`}
                       />
+                      {simulableGoals.length > 0 && (
+                        <select
+                          className="dbt-input grow"
+                          value={payGoalId}
+                          onChange={(e) => setPayGoalId(e.target.value)}
+                          aria-label={`Aplicar el pago de ${d.person} como depósito a una meta (opcional)`}
+                        >
+                          <option value="">Registrar como cobro (sin aportar a meta)</option>
+                          {simulableGoals.map((g) => (
+                            <option key={g.id} value={g.id}>Aportar a: {g.icon} {g.title}</option>
+                          ))}
+                        </select>
+                      )}
                       <button className="dbt-btn primary" onClick={() => handlePay(d.id)}>
                         <Check size={13} /> Confirmar
                       </button>
-                      <button className="dbt-btn" onClick={() => { setPayingId(null); setPayAmount(""); }}>
+                      <button className="dbt-btn" onClick={() => { setPayingId(null); setPayAmount(""); setPayGoalId(""); }}>
                         <X size={13} /> Cancelar
                       </button>
                     </div>
@@ -416,7 +435,14 @@ export default function DebtsSection(props: DebtsSectionProps) {
                     <div className="dbt-payments">
                       {d.payments.map((p) => (
                         <div key={p.id} className="dbt-pay-row">
-                          <span>Pago · {new Date(p.createdAt).toLocaleDateString("es-PE", { day: "numeric", month: "short" })}</span>
+                          <span>
+                            Pago · {new Date(p.createdAt).toLocaleDateString("es-PE", { day: "numeric", month: "short" })}
+                            {p.appliedToGoalTitle && (
+                              <span style={{ color: "var(--brand)", marginLeft: 6 }}>
+                                &rarr; aportado a {p.appliedToGoalTitle}
+                              </span>
+                            )}
+                          </span>
                           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <span style={{ color: "var(--brand)" }}>+{formatSoles(p.amount)}</span>
                             <button

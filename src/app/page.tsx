@@ -12,7 +12,9 @@ import {
   Tooltip,
   ReferenceLine,
 } from "recharts";
-import { Plus, X, Check, Pencil } from "lucide-react";
+import { Plus, X, Check, Pencil, Lock } from "lucide-react";
+import { usePinLock } from "@/lib/usePinLock";
+import PinOverlay, { type PinOverlayMode } from "@/components/PinOverlay";
 
 import "./savings.css";
 import {
@@ -33,6 +35,7 @@ import { simulatePortfolio } from "@/lib/projection";
 import GoalCard from "@/components/GoalCard";
 import StatTile from "@/components/StatTile";
 import AllocationDonut from "@/components/AllocationDonut";
+import InsightsPanel from "@/components/InsightsPanel";
 import DebtsSection, { type DebtData, type SimulationTargetGoal } from "@/components/DebtsSection";
 import ThemeToggle from "@/components/ThemeToggle";
 import DeleteConfirmModal, { type DeleteTarget } from "@/components/DeleteConfirmModal";
@@ -96,6 +99,8 @@ function MonthlyTooltip({ active, payload, monthlyRate }: MonthlyTooltipProps) {
 }
 
 export default function SavingsLedger() {
+  const pinLock = usePinLock();
+  const [pinModalMode, setPinModalMode] = useState<PinOverlayMode>(null);
   const [goals, setGoals] = useState<GoalData[]>([]);
   const [debts, setDebts] = useState<DebtData[]>([]);
   const [totalReceivable, setTotalReceivable] = useState(0);
@@ -425,6 +430,14 @@ export default function SavingsLedger() {
 
   return (
     <main className="sd-root">
+      <PinOverlay
+        mode={pinLock.locked ? "locked" : pinModalMode}
+        onUnlock={pinLock.unlock}
+        onSetPin={pinLock.setPin}
+        onRemovePin={pinLock.removePin}
+        onClose={() => setPinModalMode(null)}
+      />
+
       <Toast message={errorMsg} onClose={() => setErrorMsg(null)} />
 
       <DeleteConfirmModal
@@ -439,13 +452,21 @@ export default function SavingsLedger() {
             <span className="sd-brandmark-dot">A</span>
             <h1 className="sd-brandmark-text">Mis Metas de Ahorro</h1>
           </div>
+          <button
+            className="pin-trigger"
+            onClick={() => setPinModalMode(pinLock.hasPin ? "manage" : "setup")}
+            aria-label={pinLock.hasPin ? "Configurar PIN" : "Activar PIN"}
+            title={pinLock.hasPin ? "PIN activado" : "Activar PIN local"}
+          >
+            <Lock size={15} />
+          </button>
           <ThemeToggle />
         </div>
       </div>
 
-      {isLoading && <div className="sd-wrap"><Skeleton /></div>}
+      {(isLoading || !pinLock.ready) && <div className="sd-wrap"><Skeleton /></div>}
 
-      <div className="sd-wrap" style={{ display: isLoading ? "none" : "block" }}>
+      <div className="sd-wrap" style={{ display: isLoading || !pinLock.ready ? "none" : "block" }}>
         <motion.section
           className="sd-resumen"
           initial={{ opacity: 0, y: -8 }}
@@ -573,6 +594,15 @@ export default function SavingsLedger() {
               <p className="sd-trend-empty">Aún no hay historial mensual.</p>
             )}
           </div>
+        </motion.div>
+
+        <motion.div
+          style={{ marginTop: "var(--sp-4)" }}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.15 }}
+        >
+          <InsightsPanel monthHistory={monthHistory} formatSoles={formatSoles} />
         </motion.div>
 
         <div className="sd-section-head">

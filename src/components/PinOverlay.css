@@ -1,0 +1,143 @@
+.pin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(6px);
+  padding: var(--sp-4);
+}
+
+.pin-card {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-2);
+  text-align: center;
+}
+
+.pin-card-icon {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto;
+  border-radius: var(--r-sm);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  display: grid;
+  place-items: center;
+}
+
+.pin-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.pin-sub {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: -6px;
+}
+
+.pin-input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  text-align: center;
+  letter-spacing: 0.2em;
+  padding: var(--sp-2) var(--sp-3);
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.pin-input:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+}
+
+.pin-error {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--negative);
+}
+
+.pin-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.pin-btn {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  min-height: 38px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+}
+
+.pin-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--brand);
+}
+
+.pin-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pin-btn.primary {
+  background: var(--brand);
+  color: #fff;
+  border-color: transparent;
+}
+.pin-btn.primary:hover {
+  background: var(--brand-strong);
+}
+
+.pin-btn.danger {
+  color: var(--negative);
+}
+.pin-btn.danger:hover {
+  background: var(--negative-soft);
+  border-color: var(--negative);
+}
+
+.pin-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.pin-trigger:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { withDb, readOnly, newId, type Debt, type DebtPayment } from "@/lib/db/store";
+import { withDb, readOnly, newId, type Debt, type DebtPayment, type Movement } from "@/lib/db/store";
 
 const DebtSchema = z.object({
   person: z.string().min(1, "El nombre es requerido").max(120),
@@ -34,6 +34,10 @@ function isSettled(debt: Debt): boolean {
   return outstandingOf(debt) <= 0.001;
 }
 
+function computeGoalIsCompleted(currentAmount: number, targetAmount: number): boolean {
+  return targetAmount > 0 && (currentAmount >= targetAmount || Math.abs(currentAmount - targetAmount) < 0.001);
+}
+
 function toPlain(debt: Debt) {
   return {
     id: debt.id,
@@ -51,6 +55,8 @@ function toPlain(debt: Debt) {
         amount: round2(p.amount),
         description: p.description,
         createdAt: p.createdAt,
+        appliedToGoalId: p.appliedToGoalId ?? null,
+        appliedToGoalTitle: p.appliedToGoalTitle ?? null,
       })),
   };
 }
@@ -172,6 +178,65 @@ export async function addDebtPayment(debtId: string, data: { amount: number; des
       return { success: false, error: error.errors[0].message };
     }
     return { success: false, error: "Error al registrar el pago" };
+  }
+}
+
+// Aplica un pago de deuda directamente como depósito en una meta — la única
+// integración deliberada entre deudas y metas (todo lo demás se mantiene separado
+// a propósito, ver CLAUDE.md). Ambos lados se actualizan en un solo withDb: registra
+// el pago (marcado con appliedToGoalId/Title) y agrega el movimiento a la meta.
+export async function applyDebtPaymentToGoal(
+  debtId: string,
+  goalId: string,
+  data: { amount: number; description?: string }
+) {
+  try {
+    const parsed = PaymentSchema.parse(data);
+    const result = await withDb((db) => {
+      const d = db.debts.find((x) => x.id === debtId);
+      if (!d) return { error: "Deuda no encontrada" as const };
+      const g = db.goals.find((x) => x.id === goalId);
+      if (!g) return { error: "Meta no encontrada" as const };
+
+      const remaining = outstandingOf(d);
+      if (parsed.amount > remaining + 0.001) {
+        return { error: "El pago no puede superar lo pendiente por cobrar" as const };
+      }
+
+      const payment: DebtPayment = {
+        id: newId(),
+        amount: round2(parsed.amount),
+        description: parsed.description ?? null,
+        createdAt: new Date().toISOString(),
+        appliedToGoalId: g.id,
+        appliedToGoalTitle: g.title,
+      };
+      d.payments.unshift(payment);
+      d.isSettled = isSettled(d);
+
+      const movement: Movement = {
+        id: newId(),
+        amount: round2(parsed.amount),
+        type: "deposit",
+        description: `Cobro de deuda: ${d.person}`,
+        createdAt: new Date().toISOString(),
+      };
+      g.movements.unshift(movement);
+      const newCurrent = round2(g.currentAmount + parsed.amount);
+      g.currentAmount = newCurrent;
+      g.isCompleted = computeGoalIsCompleted(newCurrent, round2(g.targetAmount));
+
+      return { debt: d };
+    });
+    if ("error" in result) return { success: false, error: result.error };
+    revalidatePath("/");
+    return { success: true, debt: toPlain(result.debt) };
+  } catch (error) {
+    console.error("Error applying debt payment to goal:", error);
+    if (error instanceof z.ZodError) {
+      return { success: false, error: error.errors[0].message };
+    }
+    return { success: false, error: "Error al aplicar el pago a la meta" };
   }
 }
 
