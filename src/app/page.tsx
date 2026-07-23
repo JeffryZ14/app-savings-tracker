@@ -21,16 +21,24 @@ import {
   getGoals,
   createGoal,
   deleteGoal,
+  restoreGoal,
   addMovement,
   updateGoal,
   updateMovement,
   deleteMovement,
+  restoreMovement,
   getMovements,
   getMonthlySummary,
   getMonthlyRate,
   updateMonthlyRate,
 } from "@/features/goals/actions";
-import { getDebts, deleteDebt, deleteDebtPayment } from "@/features/debts/actions";
+import {
+  getDebts,
+  deleteDebt,
+  restoreDebt,
+  deleteDebtPayment,
+  restoreDebtPayment,
+} from "@/features/debts/actions";
 import { simulatePortfolio } from "@/lib/projection";
 import { MONTH_LABELS, DEFAULT_MONTHLY_RATE, MOVEMENTS_PAGE_SIZE } from "@/lib/constants";
 import GoalCard from "@/components/GoalCard";
@@ -38,9 +46,11 @@ import StatTile from "@/components/StatTile";
 import AllocationDonut from "@/components/AllocationDonut";
 import InsightsPanel from "@/components/InsightsPanel";
 import DebtsSection, { type DebtData, type SimulationTargetGoal } from "@/components/DebtsSection";
+import BackupControls from "@/components/BackupControls";
 import ThemeToggle from "@/components/ThemeToggle";
 import DeleteConfirmModal, { type DeleteTarget } from "@/components/DeleteConfirmModal";
 import Toast from "@/components/Toast";
+import UndoToast, { type UndoState } from "@/components/UndoToast";
 import Skeleton from "@/components/Skeleton";
 
 function formatSoles(n: number) {
@@ -139,6 +149,7 @@ export default function SavingsLedger() {
   // Simulación "¿y si me pagan esta deuda?" — solo visual, nunca se persiste ni cambia currentAmount real.
   const [simulation, setSimulation] = useState<{ debtId: string; goalId: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [undo, setUndo] = useState<UndoState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [movementPages, setMovementPages] = useState<Record<string, MovementData[]>>({});
@@ -348,12 +359,26 @@ export default function SavingsLedger() {
     }
   }
 
+  // Tras un borrado exitoso ofrece "Deshacer": guarda la entidad devuelta por el server
+  // y la reinserta si el usuario lo pide dentro de la ventana del toast.
+  function offerUndo(message: string, restore: () => Promise<{ success: boolean; error?: string }>) {
+    setUndo({
+      message,
+      onUndo: async () => {
+        const res = await restore();
+        if (res.success) await loadData();
+        else setErrorMsg(res.error ?? "Error al deshacer");
+      },
+    });
+  }
+
   async function handleConfirmDelete(target: DeleteTarget) {
     if (target.kind === "goal") {
       const res = await deleteGoal(target.id);
       if (res.success) {
         setDeleteTarget(null);
         await loadData();
+        if (res.removed) offerUndo("Meta eliminada", () => restoreGoal(res.removed!));
       } else {
         setErrorMsg(res.error ?? "Error al eliminar la meta");
       }
@@ -362,6 +387,7 @@ export default function SavingsLedger() {
       if (res.success) {
         setDeleteTarget(null);
         await loadData();
+        if (res.removed) offerUndo("Movimiento eliminado", () => restoreMovement(target.goalId, res.removed!));
       } else {
         setErrorMsg(res.error ?? "Error al eliminar el movimiento");
       }
@@ -370,6 +396,7 @@ export default function SavingsLedger() {
       if (res.success) {
         setDeleteTarget(null);
         await loadData();
+        if (res.removed) offerUndo("Deuda eliminada", () => restoreDebt(res.removed!));
       } else {
         setErrorMsg(res.error ?? "Error al eliminar la deuda");
       }
@@ -378,6 +405,7 @@ export default function SavingsLedger() {
       if (res.success) {
         setDeleteTarget(null);
         await loadData();
+        if (res.removed) offerUndo("Pago eliminado", () => restoreDebtPayment(target.debtId, res.removed!));
       } else {
         setErrorMsg(res.error ?? "Error al eliminar el pago");
       }
@@ -439,6 +467,8 @@ export default function SavingsLedger() {
       />
 
       <Toast message={errorMsg} onClose={() => setErrorMsg(null)} />
+
+      <UndoToast undo={undo} onDismiss={() => setUndo(null)} />
 
       <DeleteConfirmModal
         target={deleteTarget}
@@ -760,6 +790,8 @@ export default function SavingsLedger() {
           onSimulate={(debtId, goalId) => setSimulation({ debtId, goalId })}
           onClearSimulation={() => setSimulation(null)}
         />
+
+        <BackupControls onImported={loadData} onError={setErrorMsg} />
       </div>
     </main>
   );

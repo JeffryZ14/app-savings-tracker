@@ -129,14 +129,30 @@ export async function updateDebt(id: string, data: { person?: string; concept?: 
 
 export async function deleteDebt(id: string) {
   try {
+    const removed = await withDb((db) => {
+      const d = db.debts.find((x) => x.id === id) ?? null;
+      db.debts = db.debts.filter((x) => x.id !== id);
+      return d;
+    });
+    revalidatePath("/");
+    return { success: true, removed };
+  } catch (error) {
+    console.error("Error deleting debt:", error);
+    return { success: false, error: "Error al eliminar la deuda" };
+  }
+}
+
+// Reinserta una deuda eliminada (con sus pagos) — soporta "Deshacer".
+export async function restoreDebt(debt: Debt) {
+  try {
     await withDb((db) => {
-      db.debts = db.debts.filter((d) => d.id !== id);
+      if (!db.debts.some((d) => d.id === debt.id)) db.debts.unshift(debt);
     });
     revalidatePath("/");
     return { success: true };
   } catch (error) {
-    console.error("Error deleting debt:", error);
-    return { success: false, error: "Error al eliminar la deuda" };
+    console.error("Error restoring debt:", error);
+    return { success: false, error: "Error al restaurar la deuda" };
   }
 }
 
@@ -240,7 +256,26 @@ export async function deleteDebtPayment(debtId: string, paymentId: string) {
       if (!d) return { error: "Deuda no encontrada" as const };
       const idx = d.payments.findIndex((p) => p.id === paymentId);
       if (idx === -1) return { error: "Pago no encontrado" as const };
-      d.payments.splice(idx, 1);
+      const [removed] = d.payments.splice(idx, 1);
+      d.isSettled = isSettled(d);
+      return { debt: d, removed };
+    });
+    if ("error" in result) return { success: false, error: result.error };
+    revalidatePath("/");
+    return { success: true, debt: toPlain(result.debt), removed: result.removed };
+  } catch (error) {
+    console.error("Error deleting debt payment:", error);
+    return { success: false, error: "Error al eliminar el pago" };
+  }
+}
+
+// Reinserta un pago de deuda eliminado — soporta "Deshacer".
+export async function restoreDebtPayment(debtId: string, payment: DebtPayment) {
+  try {
+    const result = await withDb((db) => {
+      const d = db.debts.find((x) => x.id === debtId);
+      if (!d) return { error: "Deuda no encontrada" as const };
+      if (!d.payments.some((p) => p.id === payment.id)) d.payments.unshift(payment);
       d.isSettled = isSettled(d);
       return { debt: d };
     });
@@ -248,7 +283,7 @@ export async function deleteDebtPayment(debtId: string, paymentId: string) {
     revalidatePath("/");
     return { success: true, debt: toPlain(result.debt) };
   } catch (error) {
-    console.error("Error deleting debt payment:", error);
-    return { success: false, error: "Error al eliminar el pago" };
+    console.error("Error restoring debt payment:", error);
+    return { success: false, error: "Error al restaurar el pago" };
   }
 }

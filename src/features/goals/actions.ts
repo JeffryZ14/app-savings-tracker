@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { withDb, readOnly, newId, type Movement, type MovementType } from "@/lib/db/store";
+import { withDb, readOnly, newId, type Movement, type MovementType, type Goal } from "@/lib/db/store";
 import { round2, isTargetReached } from "@/lib/money";
 import { DEFAULT_GOAL_ICON, DEFAULT_MONTHLY_RATE, MOVEMENTS_PAGE_SIZE } from "@/lib/constants";
 import { computeAllocations, sumOtherManualPct } from "@/lib/goals/allocation";
@@ -133,14 +133,32 @@ export async function updateGoal(id: string, data: {
 
 export async function deleteGoal(id: string) {
   try {
+    const removed = await withDb((db) => {
+      const g = db.goals.find((x) => x.id === id) ?? null;
+      db.goals = db.goals.filter((x) => x.id !== id);
+      return g;
+    });
+    revalidatePath("/");
+    // Devolvemos la meta eliminada para poder ofrecer "Deshacer" en el cliente.
+    return { success: true, removed };
+  } catch (error) {
+    console.error("Error deleting goal:", error);
+    return { success: false, error: "Error al eliminar la meta" };
+  }
+}
+
+// Reinserta una meta eliminada (con sus movimientos) — soporta el "Deshacer".
+// getGoals reordena por createdAt, así que la posición se respeta sola.
+export async function restoreGoal(goal: Goal) {
+  try {
     await withDb((db) => {
-      db.goals = db.goals.filter((g) => g.id !== id);
+      if (!db.goals.some((g) => g.id === goal.id)) db.goals.unshift(goal);
     });
     revalidatePath("/");
     return { success: true };
   } catch (error) {
-    console.error("Error deleting goal:", error);
-    return { success: false, error: "Error al eliminar la meta" };
+    console.error("Error restoring goal:", error);
+    return { success: false, error: "Error al restaurar la meta" };
   }
 }
 
@@ -276,7 +294,7 @@ export async function deleteMovement(goalId: string, movementId: string) {
       goal.currentAmount = newCurrentRounded;
       goal.isCompleted = computeIsCompleted(newCurrentRounded, round2(goal.targetAmount));
 
-      return { currentAmount: newCurrentRounded };
+      return { currentAmount: newCurrentRounded, removed: movement };
     });
 
     if ("error" in result) {
@@ -284,10 +302,35 @@ export async function deleteMovement(goalId: string, movementId: string) {
     }
 
     revalidatePath("/");
-    return { success: true, currentAmount: result.currentAmount };
+    return { success: true, currentAmount: result.currentAmount, removed: result.removed };
   } catch (error) {
     console.error("Error deleting movement:", error);
     return { success: false, error: "Error al eliminar el movimiento" };
+  }
+}
+
+// Reinserta un movimiento eliminado y recalcula el saldo/estado — soporta "Deshacer".
+export async function restoreMovement(goalId: string, movement: Movement) {
+  try {
+    const result = await withDb((db) => {
+      const goal = db.goals.find((g) => g.id === goalId);
+      if (!goal) return { error: "Meta no encontrada" as const };
+      if (goal.movements.some((m) => m.id === movement.id)) {
+        return { currentAmount: round2(goal.currentAmount) };
+      }
+      goal.movements.unshift(movement);
+      const delta = movement.type === "deposit" ? movement.amount : -movement.amount;
+      const newCurrentRounded = round2(goal.currentAmount + delta);
+      goal.currentAmount = newCurrentRounded;
+      goal.isCompleted = computeIsCompleted(newCurrentRounded, round2(goal.targetAmount));
+      return { currentAmount: newCurrentRounded };
+    });
+    if ("error" in result) return { success: false, error: result.error };
+    revalidatePath("/");
+    return { success: true, currentAmount: result.currentAmount };
+  } catch (error) {
+    console.error("Error restoring movement:", error);
+    return { success: false, error: "Error al restaurar el movimiento" };
   }
 }
 
